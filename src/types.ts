@@ -1,5 +1,14 @@
 export type AccountKind = 'manga' | 'growth'
 
+export type ComicStatus =
+  | 'candidate'
+  | 'selected'
+  | 'following'
+  | 'paused'
+  | 'completed'
+  | 'dropped'
+  | 'archived'
+
 export type TopicStatus =
   | 'idea'
   | 'research'
@@ -17,6 +26,20 @@ export interface Account {
   positioning: string
   accent: string
   pillars: string[]
+}
+
+export interface Comic {
+  id: string
+  accountId: string
+  title: string
+  platform: string
+  sourceUrl?: string
+  coverUrl?: string
+  status: ComicStatus
+  updateWeekday?: number
+  updateNote: string
+  selectionNote: string
+  createdAt: string
 }
 
 export interface Topic {
@@ -98,6 +121,7 @@ export interface ScheduleItem {
 export interface WorkspaceState {
   accounts: Account[]
   activeAccountId: string
+  comics: Comic[]
   topics: Topic[]
   references: ReferenceItem[]
   researchTasks: ResearchTask[]

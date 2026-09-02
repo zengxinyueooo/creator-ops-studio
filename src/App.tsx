@@ -8,6 +8,7 @@ import { DraftsPage } from './pages/DraftsPage'
 import { ResearchPage } from './pages/ResearchPage'
 import { TopicsPage } from './pages/TopicsPage'
 import { LoginPage } from './pages/LoginPage'
+import { ComicsPage } from './pages/ComicsPage'
 import { useAuth } from './auth/AuthContext'
 import { dataMode } from './lib/supabase'
 import { WorkspaceProvider } from './store/WorkspaceContext'
@@ -26,6 +27,7 @@ export default function App() {
           <Route index element={<DashboardPage />} />
           <Route path="topics" element={<TopicsPage />} />
           <Route path="research" element={<ResearchPage />} />
+          <Route path="comics" element={<ComicsPage />} />
           <Route path="assets" element={<AssetsPage />} />
           <Route path="drafts" element={<DraftsPage />} />
           <Route path="calendar" element={<CalendarPage />} />

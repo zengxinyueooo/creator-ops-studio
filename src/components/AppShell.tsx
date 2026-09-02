@@ -1,6 +1,7 @@
 import {
   BarChart3,
   BookOpenCheck,
+  Library,
   Boxes,
   CalendarDays,
   ChevronDown,
@@ -22,6 +23,7 @@ const navigation = [
   { to: '/', label: '总览台', icon: LayoutDashboard },
   { to: '/topics', label: '选题工作流', icon: BookOpenCheck },
   { to: '/research', label: '调研导入箱', icon: Search },
+  { to: '/comics', label: '漫画候选库', icon: Library },
   { to: '/assets', label: '素材库', icon: Boxes },
   { to: '/drafts', label: '文案工作台', icon: FileText },
   { to: '/calendar', label: '内容日历', icon: CalendarDays },

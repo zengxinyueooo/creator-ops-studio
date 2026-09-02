@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext'
 import { demoState } from '../data/demo'
 import { dataMode } from '../lib/supabase'
 import {
+  createCloudComic,
   createCloudTopic,
   createCloudResearchTask,
   importCloudResearchResults,
@@ -12,18 +13,21 @@ import {
   markCloudResearchImported,
   seedCloudWorkspace,
   uploadCloudAssets,
+  updateCloudComicStatus,
   updateCloudTopicStatus,
 } from '../lib/workspaceRepository'
-import type { CopyrightStatus, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
+import type { Comic, ComicStatus, CopyrightStatus, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
 
 const STORAGE_KEY = 'creator-ops-studio:workspace:v1'
-const EMPTY_STATE: WorkspaceState = { accounts: [], activeAccountId: '', topics: [], references: [], researchTasks: [], schedules: [], assets: [] }
+const EMPTY_STATE: WorkspaceState = { accounts: [], activeAccountId: '', comics: [], topics: [], references: [], researchTasks: [], schedules: [], assets: [] }
 
 interface WorkspaceContextValue {
   state: WorkspaceState
   activeAccount: WorkspaceState['accounts'][number]
   accountTopics: Topic[]
   setActiveAccount: (accountId: string) => void
+  addComic: (input: Pick<Comic, 'title' | 'platform' | 'selectionNote'> & { sourceUrl: string }) => Promise<void>
+  updateComicStatus: (comicId: string, status: ComicStatus) => Promise<void>
   updateTopicStatus: (topicId: string, status: TopicStatus) => void
   addTopic: (input: Pick<Topic, 'title' | 'subtitle' | 'pillar'>) => void
   markResearchImported: (taskId: string) => void
@@ -44,6 +48,7 @@ function loadLocalState(): WorkspaceState {
       ...demoState,
       ...parsed,
       accounts: parsed.accounts ?? demoState.accounts,
+      comics: parsed.comics ?? [],
       topics: parsed.topics ?? [],
       references: parsed.references ?? [],
       researchTasks: parsed.researchTasks ?? [],
@@ -95,6 +100,58 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setActiveAccount: (accountId) => {
       localStorage.setItem('creator-ops-studio:active-account', accountId)
       setState((current) => ({ ...current, activeAccountId: accountId }))
+    },
+    addComic: async (input) => {
+      if (dataMode === 'supabase' && user) {
+        const row = await createCloudComic(user.id, state.activeAccountId, input)
+        setState((current) => ({
+          ...current,
+          comics: [{
+            id: row.id,
+            accountId: row.account_id,
+            title: row.title,
+            platform: row.platform,
+            sourceUrl: row.source_url ?? undefined,
+            coverUrl: row.cover_url ?? undefined,
+            status: row.status,
+            updateWeekday: row.update_weekday ?? undefined,
+            updateNote: row.update_note,
+            selectionNote: row.selection_note,
+            createdAt: '刚刚',
+          }, ...current.comics],
+        }))
+        return
+      }
+      setState((current) => ({
+        ...current,
+        comics: [{
+          id: crypto.randomUUID(),
+          accountId: current.activeAccountId,
+          title: input.title,
+          platform: input.platform,
+          sourceUrl: input.sourceUrl || undefined,
+          status: 'candidate',
+          updateNote: '',
+          selectionNote: input.selectionNote,
+          createdAt: '刚刚',
+        }, ...current.comics],
+      }))
+    },
+    updateComicStatus: async (comicId, status) => {
+      const previous = state
+      setState((current) => ({
+        ...current,
+        comics: current.comics.map((comic) => comic.id === comicId ? { ...comic, status } : comic),
+      }))
+      if (dataMode === 'supabase') {
+        try {
+          await updateCloudComicStatus(comicId, status)
+        } catch (caught) {
+          setState(previous)
+          setError(caught instanceof Error ? caught.message : '漫画审核结果保存失败')
+          throw caught
+        }
+      }
     },
     updateTopicStatus: (topicId, status) => {
       const previous = state

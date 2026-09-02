@@ -1,5 +1,5 @@
 import { demoState } from '../data/demo'
-import type { CopyrightStatus, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
+import type { ComicStatus, CopyrightStatus, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
 import { supabase } from './supabase'
 
 function client() {
@@ -14,8 +14,9 @@ function formatTime(value?: string | null) {
 
 export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState> {
   const db = client()
-  const [accountsResult, topicsResult, referencesResult, tasksResult, schedulesResult, topicAssetsResult, assetsResult] = await Promise.all([
+  const [accountsResult, comicsResult, topicsResult, referencesResult, tasksResult, schedulesResult, topicAssetsResult, assetsResult] = await Promise.all([
     db.from('accounts').select('*').eq('user_id', userId).is('archived_at', null).order('created_at'),
+    db.from('comics').select('*').eq('user_id', userId).is('archived_at', null).order('created_at', { ascending: false }),
     db.from('topics').select('*').eq('user_id', userId).is('archived_at', null).order('created_at', { ascending: false }),
     db.from('references').select('*').eq('user_id', userId).order('captured_at', { ascending: false }),
     db.from('research_tasks').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
@@ -24,7 +25,7 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
     db.from('assets').select('*').eq('user_id', userId).is('archived_at', null).order('created_at', { ascending: false }),
   ])
 
-  const failed = [accountsResult, topicsResult, referencesResult, tasksResult, schedulesResult, topicAssetsResult, assetsResult].find((result) => result.error)
+  const failed = [accountsResult, comicsResult, topicsResult, referencesResult, tasksResult, schedulesResult, topicAssetsResult, assetsResult].find((result) => result.error)
   if (failed?.error) throw failed.error
 
   const assetRows = assetsResult.data ?? []
@@ -74,6 +75,19 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
   return {
     accounts,
     activeAccountId,
+    comics: (comicsResult.data ?? []).map((row) => ({
+      id: row.id,
+      accountId: row.account_id,
+      title: row.title,
+      platform: row.platform,
+      sourceUrl: row.source_url ?? undefined,
+      coverUrl: row.cover_url ?? undefined,
+      status: row.status,
+      updateWeekday: row.update_weekday ?? undefined,
+      updateNote: row.update_note,
+      selectionNote: row.selection_note,
+      createdAt: formatTime(row.created_at),
+    })),
     topics: (topicsResult.data ?? []).map((row) => ({
       id: row.id,
       accountId: row.account_id,
@@ -123,6 +137,29 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
       topicId: (topicAssetsResult.data ?? []).find((link) => link.asset_id === row.id)?.topic_id,
     })),
   }
+}
+
+export async function createCloudComic(
+  userId: string,
+  accountId: string,
+  input: { title: string; platform: string; sourceUrl: string; selectionNote: string },
+) {
+  const { data, error } = await client().from('comics').insert({
+    user_id: userId,
+    account_id: accountId,
+    title: input.title,
+    platform: input.platform || 'unknown',
+    source_url: input.sourceUrl || null,
+    selection_note: input.selectionNote,
+    status: 'candidate',
+  }).select('*').single()
+  if (error) throw error
+  return data
+}
+
+export async function updateCloudComicStatus(comicId: string, status: ComicStatus) {
+  const { error } = await client().from('comics').update({ status }).eq('id', comicId)
+  if (error) throw error
 }
 
 export async function createCloudTopic(userId: string, accountId: string, input: Pick<Topic, 'title' | 'subtitle' | 'pillar'>) {
