@@ -7,21 +7,32 @@ import { DashboardPage } from './pages/DashboardPage'
 import { DraftsPage } from './pages/DraftsPage'
 import { ResearchPage } from './pages/ResearchPage'
 import { TopicsPage } from './pages/TopicsPage'
+import { LoginPage } from './pages/LoginPage'
+import { useAuth } from './auth/AuthContext'
+import { dataMode } from './lib/supabase'
+import { WorkspaceProvider } from './store/WorkspaceContext'
 import './App.css'
 
 export default function App() {
+  const { user, loading } = useAuth()
+
+  if (dataMode === 'supabase' && loading) return <div className="app-state">正在连接你的工作台…</div>
+  if (dataMode === 'supabase' && !user) return <LoginPage />
+
   return (
-    <Routes>
-      <Route element={<AppShell />}>
-        <Route index element={<DashboardPage />} />
-        <Route path="topics" element={<TopicsPage />} />
-        <Route path="research" element={<ResearchPage />} />
-        <Route path="assets" element={<AssetsPage />} />
-        <Route path="drafts" element={<DraftsPage />} />
-        <Route path="calendar" element={<CalendarPage />} />
-        <Route path="analytics" element={<AnalyticsPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Route>
-    </Routes>
+    <WorkspaceProvider>
+      <Routes>
+        <Route element={<AppShell />}>
+          <Route index element={<DashboardPage />} />
+          <Route path="topics" element={<TopicsPage />} />
+          <Route path="research" element={<ResearchPage />} />
+          <Route path="assets" element={<AssetsPage />} />
+          <Route path="drafts" element={<DraftsPage />} />
+          <Route path="calendar" element={<CalendarPage />} />
+          <Route path="analytics" element={<AnalyticsPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    </WorkspaceProvider>
   )
 }

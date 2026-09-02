@@ -7,6 +7,7 @@ import {
   FileText,
   Inbox,
   LayoutDashboard,
+  LogOut,
   PanelLeftClose,
   Search,
   Sparkles,
@@ -15,6 +16,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import type { CSSProperties } from 'react'
 import { dataMode } from '../lib/supabase'
 import { useWorkspace } from '../store/WorkspaceContext'
+import { useAuth } from '../auth/AuthContext'
 
 const navigation = [
   { to: '/', label: '总览台', icon: LayoutDashboard },
@@ -28,6 +30,7 @@ const navigation = [
 
 export function AppShell() {
   const { state, activeAccount, setActiveAccount } = useWorkspace()
+  const { user, signOut } = useAuth()
 
   return (
     <div className="app-shell" style={{ '--account-accent': activeAccount.accent } as CSSProperties}>
@@ -68,7 +71,7 @@ export function AppShell() {
       <main className="main-panel">
         <header className="topbar">
           <div className="topbar-search"><Search size={17} /><span>搜索选题、素材和参考内容</span><kbd>⌘ K</kbd></div>
-          <div className="topbar-actions"><button className="icon-button" aria-label="导入箱"><Inbox size={18} /></button><span className="user-avatar">Z</span></div>
+          <div className="topbar-actions"><button className="icon-button" aria-label="导入箱"><Inbox size={18} /></button><span className="user-avatar">{user?.email?.slice(0, 1).toUpperCase() ?? 'Z'}</span>{dataMode === 'supabase' && <button className="icon-button" aria-label="退出登录" title="退出登录" onClick={() => void signOut()}><LogOut size={16} /></button>}</div>
         </header>
         <div className="page-container"><Outlet /></div>
       </main>
