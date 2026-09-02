@@ -5,10 +5,10 @@ import type { Comic } from '../types'
 
 const platformLabels: Record<string, string> = {
   kuaikan: '快看漫画',
-  bilibili: '哔哩哔哩漫画',
-  webtoon: 'WEBTOON',
-  other: '其他平台',
+  快看漫画: '快看漫画',
 }
+
+const mangaPlatform = '快看漫画'
 
 function ComicCard({ comic, mode, onKeep, onDrop }: {
   comic: Comic
@@ -44,7 +44,6 @@ export function ComicsPage() {
   const { activeAccount, state, addComic, updateComicStatus } = useWorkspace()
   const [showForm, setShowForm] = useState(false)
   const [title, setTitle] = useState('')
-  const [platform, setPlatform] = useState('kuaikan')
   const [sourceUrl, setSourceUrl] = useState('')
   const [selectionNote, setSelectionNote] = useState('')
   const [saving, setSaving] = useState(false)
@@ -60,7 +59,7 @@ export function ComicsPage() {
     setSaving(true)
     setError('')
     try {
-      await addComic({ title: title.trim(), platform, sourceUrl: sourceUrl.trim(), selectionNote: selectionNote.trim() })
+      await addComic({ title: title.trim(), platform: mangaPlatform, sourceUrl: sourceUrl.trim(), selectionNote: selectionNote.trim() })
       setTitle('')
       setSourceUrl('')
       setSelectionNote('')
@@ -88,7 +87,7 @@ export function ComicsPage() {
   return (
     <>
       <section className="page-heading compact-heading">
-        <div><span className="eyebrow">COMIC RESEARCH</span><h1>漫画候选库</h1><p>先展示调研结果，由你决定哪些漫画值得进入后续选题和素材流程。</p></div>
+        <div><span className="eyebrow">COMIC RESEARCH</span><h1>漫画候选库</h1><p>这里只收录快看漫画作品；调研结果先由你审核，再进入后续选题和素材流程。</p></div>
         <button className="primary-button" type="button" onClick={() => setShowForm((current) => !current)}><Plus size={16} />录入调研结果</button>
       </section>
 
@@ -102,7 +101,7 @@ export function ComicsPage() {
         <div className="panel-heading"><div><h2>录入一条调研结果</h2><p>目前先手动录入，下一版再承接自动调研结果。</p></div></div>
         <div className="comic-form-fields">
           <label>漫画名称<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：某某漫画" maxLength={100} required /></label>
-          <label>连载平台<select value={platform} onChange={(event) => setPlatform(event.target.value)}>{Object.entries(platformLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label>连载平台<input value="快看漫画（固定）" disabled /></label>
           <label className="wide">来源链接（可选）<input type="url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="漫画详情页或调研来源" /></label>
           <label className="wide">为什么值得关注（可选）<textarea value={selectionNote} onChange={(event) => setSelectionNote(event.target.value)} placeholder="例如：近期更新稳定，有多个高情绪片段可做" maxLength={300} /></label>
         </div>
