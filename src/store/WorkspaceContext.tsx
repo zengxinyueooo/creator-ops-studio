@@ -6,12 +6,14 @@ import { demoState } from '../data/demo'
 import { dataMode } from '../lib/supabase'
 import {
   createCloudTopic,
+  createCloudResearchTask,
+  importCloudResearchResults,
   loadCloudWorkspace,
   markCloudResearchImported,
   seedCloudWorkspace,
   updateCloudTopicStatus,
 } from '../lib/workspaceRepository'
-import type { Topic, TopicStatus, WorkspaceState } from '../types'
+import type { Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
 
 const STORAGE_KEY = 'creator-ops-studio:workspace:v1'
 const EMPTY_STATE: WorkspaceState = { accounts: [], activeAccountId: '', topics: [], references: [], researchTasks: [], schedules: [] }
@@ -24,6 +26,8 @@ interface WorkspaceContextValue {
   updateTopicStatus: (topicId: string, status: TopicStatus) => void
   addTopic: (input: Pick<Topic, 'title' | 'subtitle' | 'pillar'>) => void
   markResearchImported: (taskId: string) => void
+  addResearchTask: (input: { keyword: string; purpose: string; limit: number }) => Promise<void>
+  importResearchResults: (taskId: string, results: XhsResearchResult[]) => Promise<void>
   resetDemo: () => void
 }
 
@@ -60,7 +64,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [user])
 
   useEffect(() => {
-    if (dataMode === 'supabase') void reload()
+    if (dataMode !== 'supabase') return
+    const timer = window.setTimeout(() => void reload(), 0)
+    return () => window.clearTimeout(timer)
   }, [reload])
 
   useEffect(() => {
@@ -142,6 +148,59 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           setError(caught instanceof Error ? caught.message : '调研任务保存失败')
         })
       }
+    },
+    addResearchTask: async (input) => {
+      if (dataMode === 'supabase' && user) {
+        const row = await createCloudResearchTask(user.id, state.activeAccountId, input)
+        setState((current) => ({
+          ...current,
+          researchTasks: [{
+            id: row.id,
+            accountId: row.account_id,
+            keyword: row.keyword,
+            purpose: row.purpose,
+            status: 'queued',
+            limit: row.result_limit,
+            createdAt: '刚刚',
+          }, ...current.researchTasks],
+        }))
+        return
+      }
+      setState((current) => ({
+        ...current,
+        researchTasks: [{
+          id: crypto.randomUUID(),
+          accountId: current.activeAccountId,
+          keyword: input.keyword,
+          purpose: input.purpose,
+          status: 'queued',
+          limit: input.limit,
+          createdAt: '刚刚',
+        }, ...current.researchTasks],
+      }))
+    },
+    importResearchResults: async (taskId, results) => {
+      if (dataMode === 'supabase' && user) {
+        await importCloudResearchResults(user.id, state.activeAccountId, taskId, results)
+        await reload()
+        return
+      }
+      setState((current) => ({
+        ...current,
+        references: [...results.map((result) => ({
+          id: crypto.randomUUID(),
+          accountId: current.activeAccountId,
+          title: result.title,
+          author: result.author,
+          sourceUrl: result.url,
+          likes: result.likes,
+          collects: 0,
+          comments: 0,
+          capturedAt: '刚刚',
+          insight: '',
+        })), ...current.references],
+        researchTasks: current.researchTasks.map((task) => task.id === taskId ? { ...task, status: 'imported' } : task),
+      }))
     },
     resetDemo: () => dataMode === 'local' ? setState(demoState) : void reload(),
   }), [accountTopics, activeAccount, reload, state, user])

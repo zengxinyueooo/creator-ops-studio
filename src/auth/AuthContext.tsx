@@ -23,7 +23,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (dataMode !== 'supabase' || !supabase) {
-      setLoading(false)
       return
     }
 

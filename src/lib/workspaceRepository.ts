@@ -1,5 +1,5 @@
 import { demoState } from '../data/demo'
-import type { Topic, TopicStatus, WorkspaceState } from '../types'
+import type { Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
 import { supabase } from './supabase'
 
 function client() {
@@ -84,7 +84,7 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
       accountId: row.account_id,
       keyword: row.keyword,
       purpose: row.purpose,
-      status: row.status === 'imported' ? 'imported' : 'queued',
+      status: ['queued', 'running', 'imported', 'failed'].includes(row.status) ? row.status : 'queued',
       limit: row.result_limit,
       createdAt: formatTime(row.created_at),
     })),
@@ -120,6 +120,48 @@ export async function updateCloudTopicStatus(topicId: string, status: TopicStatu
 export async function markCloudResearchImported(taskId: string) {
   const { error } = await client().from('research_tasks').update({ status: 'imported', completed_at: new Date().toISOString() }).eq('id', taskId)
   if (error) throw error
+}
+
+export async function createCloudResearchTask(userId: string, accountId: string, input: { keyword: string; purpose: string; limit: number }) {
+  const { data, error } = await client().from('research_tasks').insert({
+    user_id: userId,
+    account_id: accountId,
+    keyword: input.keyword,
+    purpose: input.purpose,
+    result_limit: Math.min(20, Math.max(1, input.limit)),
+    status: 'queued',
+    provider: 'opencli',
+    command_preview: `opencli xiaohongshu search ${JSON.stringify(input.keyword)} --limit ${input.limit} -f json`,
+  }).select('*').single()
+  if (error) throw error
+  return data
+}
+
+export async function importCloudResearchResults(userId: string, accountId: string, taskId: string, results: XhsResearchResult[]) {
+  const db = client()
+  if (results.length) {
+    const { error: referenceError } = await db.from('references').upsert(results.map((result) => ({
+      user_id: userId,
+      account_id: accountId,
+      platform: 'xiaohongshu',
+      source_url: result.url,
+      source_note_id: result.noteId || null,
+      author_name: result.author,
+      title: result.title,
+      likes: result.likes,
+      published_at: result.publishedAt,
+      insight: '',
+      raw_payload: { rank: result.rank, imported_from: 'opencli-search' },
+    })), { onConflict: 'user_id,source_url', ignoreDuplicates: true })
+    if (referenceError) throw referenceError
+  }
+
+  const { error: taskError } = await db.from('research_tasks').update({
+    status: 'imported',
+    completed_at: new Date().toISOString(),
+    result_summary: { imported_count: results.length, reviewed_by_user: true },
+  }).eq('id', taskId)
+  if (taskError) throw taskError
 }
 
 export async function seedCloudWorkspace(userId: string) {

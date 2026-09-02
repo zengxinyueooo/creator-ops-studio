@@ -6,12 +6,13 @@
 
 - 双账号切换与独立内容定位
 - 选题看板、评分和人工审核状态流
-- OpenCLI 小红书调研任务与导入箱
+- OpenCLI 小红书调研任务、结果预览与人工勾选导入
 - 素材分组、来源与使用记录界面
 - 文案版本与审核工作台
 - 漫画更新、发布和复盘日历
 - 发布表现与栏目分析界面
 - Supabase schema、索引、触发器和 RLS 策略
+- Supabase 邮箱认证与按用户隔离的云端数据
 - 无 Supabase 密钥时自动使用本地演示数据
 
 ## 本地启动
@@ -49,6 +50,15 @@ publishable key 可以出现在前端，但 `service_role` 和 AI API Key 永远
 pnpm opencli:doctor
 pnpm opencli:xhs search "关键词" --limit 20 -f json
 ```
+
+本地开发服务器提供受限的 `/api/opencli/xhs-search` 桥接端点。它只接受本机工作台的请求，只调用 `xiaohongshu search` 只读命令，并在返回结果中移除 `xsec_token` 等临时参数。工作台中的使用流程是：
+
+1. 创建关键词调研任务。
+2. 点击“本机执行”。
+3. 逐条检查并勾选查询结果。
+4. 点击“确认导入”后才写入 Supabase。
+
+Cloudflare Pages 不会运行本机 OpenCLI。线上版本仍需电脑上的伴随服务在线，或者使用“复制命令 + 手动导入”的降级流程。
 
 详细边界见 `docs/OPENCLI.md`。自动发布、批量互动和无人值守抓取不在项目范围内。
 

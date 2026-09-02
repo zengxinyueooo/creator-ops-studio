@@ -52,9 +52,19 @@ export interface ResearchTask {
   accountId: string
   keyword: string
   purpose: string
-  status: 'queued' | 'imported'
+  status: 'queued' | 'running' | 'imported' | 'failed'
   limit: number
   createdAt: string
+}
+
+export interface XhsResearchResult {
+  rank: number
+  noteId: string
+  title: string
+  author: string
+  likes: number
+  publishedAt: string | null
+  url: string
 }
 
 export interface ScheduleItem {
