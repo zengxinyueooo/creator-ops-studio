@@ -67,6 +67,26 @@ export interface XhsResearchResult {
   url: string
 }
 
+export type CopyrightStatus = 'unknown' | 'reference_only' | 'authorized' | 'original'
+
+export interface AssetItem {
+  id: string
+  accountId: string
+  storagePath: string
+  originalName: string
+  mimeType: string
+  byteSize: number
+  sourceUrl?: string
+  sourceType: string
+  tags: string[]
+  workName: string
+  chapter: string
+  copyrightStatus: CopyrightStatus
+  createdAt: string
+  previewUrl?: string
+  topicId?: string
+}
+
 export interface ScheduleItem {
   id: string
   accountId: string
@@ -82,4 +102,5 @@ export interface WorkspaceState {
   references: ReferenceItem[]
   researchTasks: ResearchTask[]
   schedules: ScheduleItem[]
+  assets: AssetItem[]
 }

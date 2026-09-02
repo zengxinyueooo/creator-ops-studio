@@ -11,6 +11,7 @@ describe('demo workspace', () => {
     const accountIds = new Set(demoState.accounts.map((account) => account.id))
     expect(demoState.topics.every((topic) => accountIds.has(topic.accountId))).toBe(true)
     expect(demoState.researchTasks.every((task) => accountIds.has(task.accountId))).toBe(true)
+    expect(demoState.assets.every((asset) => accountIds.has(asset.accountId))).toBe(true)
   })
 
   it('uses conservative OpenCLI result limits', () => {

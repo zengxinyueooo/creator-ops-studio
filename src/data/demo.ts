@@ -34,11 +34,12 @@ export const demoState: WorkspaceState = {
     { id: 'ref-2', accountId: 'manga-account', title: '看到这里我才明白她为什么离开', author: '纸上放映厅', sourceUrl: 'https://www.xiaohongshu.com/', likes: 7600, collects: 2100, comments: 392, capturedAt: '昨天 21:40', insight: '用角色动机做标题，图片按情绪递进排列，适合人物观察栏目。' },
   ],
   researchTasks: [
-    { id: 'research-1', accountId: 'manga-account', keyword: '雨夜告白 漫画', purpose: '确认相似片段的历史爆款率与常用标题角度', status: 'queued', limit: 20, createdAt: '今天 10:06' },
+    { id: 'research-1', accountId: 'manga-account', keyword: '雨夜告白 漫画', purpose: '确认相似片段的历史爆款率与常用标题角度', status: 'queued', limit: 10, createdAt: '今天 10:06' },
   ],
   schedules: [
     { id: 'schedule-1', accountId: 'manga-account', title: '《雾色心跳》固定更新', dateLabel: '周五', kind: 'update' },
     { id: 'schedule-2', accountId: 'manga-account', title: '角色观察发布', dateLabel: '明天 19:30', kind: 'publish' },
     { id: 'schedule-3', accountId: 'manga-account', title: '本周数据复盘', dateLabel: '周日 21:00', kind: 'review' },
   ],
+  assets: [],
 }

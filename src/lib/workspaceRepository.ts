@@ -1,5 +1,5 @@
 import { demoState } from '../data/demo'
-import type { Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
+import type { CopyrightStatus, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
 import { supabase } from './supabase'
 
 function client() {
@@ -14,17 +14,27 @@ function formatTime(value?: string | null) {
 
 export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState> {
   const db = client()
-  const [accountsResult, topicsResult, referencesResult, tasksResult, schedulesResult, topicAssetsResult] = await Promise.all([
+  const [accountsResult, topicsResult, referencesResult, tasksResult, schedulesResult, topicAssetsResult, assetsResult] = await Promise.all([
     db.from('accounts').select('*').eq('user_id', userId).is('archived_at', null).order('created_at'),
     db.from('topics').select('*').eq('user_id', userId).is('archived_at', null).order('created_at', { ascending: false }),
     db.from('references').select('*').eq('user_id', userId).order('captured_at', { ascending: false }),
     db.from('research_tasks').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
     db.from('schedules').select('*').eq('user_id', userId).order('created_at'),
     db.from('topic_assets').select('topic_id, asset_id'),
+    db.from('assets').select('*').eq('user_id', userId).is('archived_at', null).order('created_at', { ascending: false }),
   ])
 
-  const failed = [accountsResult, topicsResult, referencesResult, tasksResult, schedulesResult, topicAssetsResult].find((result) => result.error)
+  const failed = [accountsResult, topicsResult, referencesResult, tasksResult, schedulesResult, topicAssetsResult, assetsResult].find((result) => result.error)
   if (failed?.error) throw failed.error
+
+  const assetRows = assetsResult.data ?? []
+  const signedUrls = new Map<string, string>()
+  if (assetRows.length) {
+    const { data: signedData } = await db.storage.from('content-assets').createSignedUrls(assetRows.map((row) => row.storage_path), 3600)
+    for (const item of signedData ?? []) {
+      if (item.path && item.signedUrl) signedUrls.set(item.path, item.signedUrl)
+    }
+  }
 
   const accounts = (accountsResult.data ?? []).map((row) => ({
     id: row.id,
@@ -95,6 +105,23 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
       dateLabel: typeof row.custom_fields?.dateLabel === 'string' ? row.custom_fields.dateLabel : formatTime(row.starts_at),
       kind: row.kind,
     })),
+    assets: assetRows.map((row) => ({
+      id: row.id,
+      accountId: row.account_id,
+      storagePath: row.storage_path,
+      originalName: row.original_name,
+      mimeType: row.mime_type,
+      byteSize: Number(row.byte_size),
+      sourceUrl: row.source_url ?? undefined,
+      sourceType: row.source_type,
+      tags: row.tags ?? [],
+      workName: typeof row.custom_fields?.workName === 'string' ? row.custom_fields.workName : '',
+      chapter: typeof row.custom_fields?.chapter === 'string' ? row.custom_fields.chapter : '',
+      copyrightStatus: (typeof row.custom_fields?.copyrightStatus === 'string' ? row.custom_fields.copyrightStatus : 'unknown') as CopyrightStatus,
+      createdAt: formatTime(row.created_at),
+      previewUrl: signedUrls.get(row.storage_path),
+      topicId: (topicAssetsResult.data ?? []).find((link) => link.asset_id === row.id)?.topic_id,
+    })),
   }
 }
 
@@ -162,6 +189,49 @@ export async function importCloudResearchResults(userId: string, accountId: stri
     result_summary: { imported_count: results.length, reviewed_by_user: true },
   }).eq('id', taskId)
   if (taskError) throw taskError
+}
+
+export async function uploadCloudAssets(
+  userId: string,
+  accountId: string,
+  files: File[],
+  metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; topicId?: string },
+) {
+  const db = client()
+  const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+  if (!files.length || files.length > 10) throw new Error('每次请选择 1–10 张图片')
+
+  for (const file of files) {
+    if (!allowedTypes.has(file.type)) throw new Error(`${file.name} 不是支持的图片格式`)
+    if (file.size > 15 * 1024 * 1024) throw new Error(`${file.name} 超过 15MB`)
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(-100) || 'image'
+    const storagePath = `${userId}/${accountId}/${crypto.randomUUID()}-${safeName}`
+    const { error: uploadError } = await db.storage.from('content-assets').upload(storagePath, file, { upsert: false, contentType: file.type })
+    if (uploadError) throw uploadError
+
+    const { data: asset, error: assetError } = await db.from('assets').insert({
+      user_id: userId,
+      account_id: accountId,
+      storage_path: storagePath,
+      original_name: file.name,
+      mime_type: file.type,
+      byte_size: file.size,
+      source_url: metadata.sourceUrl || null,
+      source_type: metadata.sourceType,
+      tags: metadata.tags,
+      custom_fields: {
+        workName: metadata.workName,
+        chapter: metadata.chapter,
+        copyrightStatus: metadata.copyrightStatus,
+      },
+    }).select('id').single()
+    if (assetError) throw assetError
+
+    if (metadata.topicId) {
+      const { error: linkError } = await db.from('topic_assets').insert({ topic_id: metadata.topicId, asset_id: asset.id })
+      if (linkError) throw linkError
+    }
+  }
 }
 
 export async function seedCloudWorkspace(userId: string) {

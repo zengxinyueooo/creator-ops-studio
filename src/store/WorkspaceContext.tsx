@@ -11,12 +11,13 @@ import {
   loadCloudWorkspace,
   markCloudResearchImported,
   seedCloudWorkspace,
+  uploadCloudAssets,
   updateCloudTopicStatus,
 } from '../lib/workspaceRepository'
-import type { Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
+import type { CopyrightStatus, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
 
 const STORAGE_KEY = 'creator-ops-studio:workspace:v1'
-const EMPTY_STATE: WorkspaceState = { accounts: [], activeAccountId: '', topics: [], references: [], researchTasks: [], schedules: [] }
+const EMPTY_STATE: WorkspaceState = { accounts: [], activeAccountId: '', topics: [], references: [], researchTasks: [], schedules: [], assets: [] }
 
 interface WorkspaceContextValue {
   state: WorkspaceState
@@ -28,6 +29,7 @@ interface WorkspaceContextValue {
   markResearchImported: (taskId: string) => void
   addResearchTask: (input: { keyword: string; purpose: string; limit: number }) => Promise<void>
   importResearchResults: (taskId: string, results: XhsResearchResult[]) => Promise<void>
+  uploadAssets: (files: File[], metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; topicId?: string }) => Promise<void>
   resetDemo: () => void
 }
 
@@ -37,7 +39,17 @@ function loadLocalState(): WorkspaceState {
   const stored = localStorage.getItem(STORAGE_KEY)
   if (!stored) return demoState
   try {
-    return JSON.parse(stored) as WorkspaceState
+    const parsed = JSON.parse(stored) as Partial<WorkspaceState>
+    return {
+      ...demoState,
+      ...parsed,
+      accounts: parsed.accounts ?? demoState.accounts,
+      topics: parsed.topics ?? [],
+      references: parsed.references ?? [],
+      researchTasks: parsed.researchTasks ?? [],
+      schedules: parsed.schedules ?? [],
+      assets: parsed.assets ?? [],
+    }
   } catch {
     return demoState
   }
@@ -200,6 +212,33 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           insight: '',
         })), ...current.references],
         researchTasks: current.researchTasks.map((task) => task.id === taskId ? { ...task, status: 'imported' } : task),
+      }))
+    },
+    uploadAssets: async (files, metadata) => {
+      if (dataMode === 'supabase' && user) {
+        await uploadCloudAssets(user.id, state.activeAccountId, files, metadata)
+        await reload()
+        return
+      }
+      setState((current) => ({
+        ...current,
+        assets: [...files.map((file) => ({
+          id: crypto.randomUUID(),
+          accountId: current.activeAccountId,
+          storagePath: '',
+          originalName: file.name,
+          mimeType: file.type,
+          byteSize: file.size,
+          sourceUrl: metadata.sourceUrl || undefined,
+          sourceType: metadata.sourceType,
+          tags: metadata.tags,
+          workName: metadata.workName,
+          chapter: metadata.chapter,
+          copyrightStatus: metadata.copyrightStatus,
+          createdAt: '刚刚',
+          previewUrl: URL.createObjectURL(file),
+          topicId: metadata.topicId,
+        })), ...current.assets],
       }))
     },
     resetDemo: () => dataMode === 'local' ? setState(demoState) : void reload(),

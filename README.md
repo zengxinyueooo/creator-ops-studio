@@ -31,8 +31,9 @@ pnpm dev
 1. 复制 `.env.example` 为 `.env.local`。
 2. 在 Supabase 项目设置中找到 Project URL 和 publishable key。
 3. 填写环境变量，并将 `VITE_DATA_MODE` 改成 `supabase`。
-4. 执行 `supabase/migrations/202609020001_initial_schema.sql`。
-5. 在 Supabase Storage 创建私有 bucket：`content-assets`。
+4. 按文件名顺序执行 `supabase/migrations/` 中的 SQL。
+
+第二份迁移会创建私有 bucket `content-assets`，限制图片格式与 15MB 大小，并确保每个用户只能访问以自己用户 ID 开头的目录。
 
 ```env
 VITE_SUPABASE_URL=https://kxodqxkuusdmlzgteabx.supabase.co
