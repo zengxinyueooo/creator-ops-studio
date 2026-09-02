@@ -1,5 +1,5 @@
 import { demoState } from '../data/demo'
-import type { ComicStatus, CopyrightStatus, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
+import type { ComicSerializationStatus, ComicStatus, CopyrightStatus, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
 import { supabase } from './supabase'
 
 function client() {
@@ -83,6 +83,9 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
       sourceUrl: row.source_url ?? undefined,
       coverUrl: row.cover_url ?? undefined,
       status: row.status,
+      serializationStatus: (['ongoing', 'completed'].includes(row.custom_fields?.serialization_status)
+        ? row.custom_fields.serialization_status
+        : 'unknown') as ComicSerializationStatus,
       updateWeekday: row.update_weekday ?? undefined,
       updateNote: row.update_note,
       selectionNote: row.selection_note,

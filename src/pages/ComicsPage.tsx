@@ -10,6 +10,12 @@ const platformLabels: Record<string, string> = {
 
 const mangaPlatform = '快看漫画'
 
+const serializationLabels = {
+  ongoing: '连载中',
+  completed: '已完结',
+  unknown: '连载状态待确认',
+}
+
 function ComicCard({ comic, mode, onKeep, onDrop }: {
   comic: Comic
   mode: 'candidate' | 'selected'
@@ -17,6 +23,7 @@ function ComicCard({ comic, mode, onKeep, onDrop }: {
   onDrop?: () => void
 }) {
   const platform = platformLabels[comic.platform] ?? comic.platform
+  const serialization = serializationLabels[comic.serializationStatus]
   return (
     <article className="comic-card">
       <div className="comic-cover-placeholder"><BookOpen size={25} /><span>{comic.title.slice(0, 1)}</span></div>
@@ -26,7 +33,7 @@ function ComicCard({ comic, mode, onKeep, onDrop }: {
           <small>{comic.createdAt}</small>
         </div>
         <h3>{comic.title}</h3>
-        <p className="comic-platform">{platform}{comic.updateNote ? ` · ${comic.updateNote}` : ''}</p>
+        <p className="comic-platform">{platform} · {serialization}{comic.updateNote ? ` · ${comic.updateNote}` : ''}</p>
         <p className="comic-reason">{comic.selectionNote || '暂无调研说明'}</p>
         <div className="comic-card-footer">
           {comic.sourceUrl ? <a href={comic.sourceUrl} target="_blank" rel="noreferrer">查看来源 <ArrowUpRight size={14} /></a> : <span>未填写来源</span>}

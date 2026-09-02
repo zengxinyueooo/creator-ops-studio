@@ -9,6 +9,8 @@ export type ComicStatus =
   | 'dropped'
   | 'archived'
 
+export type ComicSerializationStatus = 'ongoing' | 'completed' | 'unknown'
+
 export type TopicStatus =
   | 'idea'
   | 'research'
@@ -36,6 +38,7 @@ export interface Comic {
   sourceUrl?: string
   coverUrl?: string
   status: ComicStatus
+  serializationStatus: ComicSerializationStatus
   updateWeekday?: number
   updateNote: string
   selectionNote: string
