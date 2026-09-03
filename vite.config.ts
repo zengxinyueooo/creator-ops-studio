@@ -10,7 +10,7 @@ import { defineConfig } from 'vite'
 const execFileAsync = promisify(execFile)
 const projectRoot = dirname(fileURLToPath(import.meta.url))
 const NOTE_CARD_SELECTOR = 'section.note-item, section:has(a[href*="/search_result/"]), section:has(a[href*="/explore/"])'
-const FILTER_OPTION_SELECTOR = '.tag-container .tags span, .tag-container .tags, .filter-panel span'
+const FILTER_OPTION_SELECTOR = '#app span'
 
 type BrowserFindEntry = { ref?: number; text?: string; visible?: boolean; attrs?: Record<string, string> }
 type BrowserFindResult = { matches_n?: number; entries?: BrowserFindEntry[]; error?: { message?: string } }
@@ -78,7 +78,7 @@ function parseJson<T>(value: string, context: string): T {
 
 async function findExactTextRef(session: string, selector: string, label: string) {
   const payload = parseJson<BrowserFindResult>(await runOpenCli([
-    'browser', session, 'find', '--css', selector, '--limit', '80', '--text-max', '80', '--window', 'background',
+    'browser', session, 'find', '--css', selector, '--limit', '500', '--text-max', '80', '--window', 'background',
   ]), `查找“${label}”时`)
   if (payload.error) throw new Error(payload.error.message || `未找到筛选项“${label}”`)
   const normalize = (value: unknown) => String(value ?? '').replace(/\s+/g, '').trim()
@@ -107,11 +107,12 @@ const EXTRACT_VISIBLE_NOTES_JS = String.raw`(() => {
     : [...new Set([...document.querySelectorAll('a[href*="/search_result/"], a[href*="/explore/"]')].map((link) => link.closest('section')).filter(Boolean))];
   const seen = new Set();
   const results = [];
+  const viewportHeight = innerHeight || screen.availHeight || 900;
   for (const card of cards) {
     if (card.classList && card.classList.contains('query-note-item')) continue;
     const rect = card.getBoundingClientRect();
     const style = getComputedStyle(card);
-    if (rect.width <= 0 || rect.height <= 0 || rect.bottom <= 0 || rect.top >= innerHeight || style.display === 'none' || style.visibility === 'hidden') continue;
+    if (rect.width <= 0 || rect.height <= 0 || rect.bottom <= 0 || rect.top >= viewportHeight || style.display === 'none' || style.visibility === 'hidden') continue;
     const link = card.querySelector('a.cover.mask, a[href*="/search_result/"], a[href*="/explore/"], a[href*="/note/"]');
     const url = normalizeUrl(link && link.getAttribute('href'));
     if (!url || seen.has(url)) continue;
@@ -140,9 +141,12 @@ async function searchOneKeyword(session: string, keyword: string) {
   await inspectPageHealth(session)
   await runOpenCli(['browser', session, 'wait', 'selector', NOTE_CARD_SELECTOR, '--timeout', '15000', '--window', 'background'], 25_000)
 
+  await clickFreshTextTarget(session, '#image', '图文')
+  await runOpenCli(['browser', session, 'wait', 'time', '1', '--window', 'background'])
+  await inspectPageHealth(session)
   await clickFreshTextTarget(session, '.filter span, .filter', '筛选')
   await runOpenCli(['browser', session, 'wait', 'text', '最多点赞', '--timeout', '8000', '--window', 'background'])
-  for (const label of ['最多点赞', '图文', '一周内', '未看过']) {
+  for (const label of ['最多点赞', '一周内', '未看过']) {
     await clickFreshTextTarget(session, FILTER_OPTION_SELECTOR, label)
     await runOpenCli(['browser', session, 'wait', 'time', '1', '--window', 'background'])
     await inspectPageHealth(session)
