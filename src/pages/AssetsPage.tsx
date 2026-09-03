@@ -1,7 +1,7 @@
 import { Check, FileImage, ImageOff, Layers3, Link2, RefreshCw, Search, ShieldCheck, Upload, X } from 'lucide-react'
-import { useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useWorkspace } from '../store/WorkspaceContext'
-import type { AssetContentType, AssetVisualFormat, CopyrightStatus } from '../types'
+import type { AssetContentType, AssetItem, AssetVisualFormat, CopyrightStatus } from '../types'
 
 const copyrightLabels: Record<CopyrightStatus, string> = {
   unknown: '来源待核对',
@@ -50,6 +50,16 @@ export function AssetsPage() {
   const [uploading, setUploading] = useState(false)
   const [busyAssetId, setBusyAssetId] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [previewAsset, setPreviewAsset] = useState<AssetItem | null>(null)
+
+  useEffect(() => {
+    if (!previewAsset) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPreviewAsset(null)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [previewAsset])
 
   const selectedTopic = accountTopics.find((topic) => topic.id === selectedTopicId)
   const selectedComic = comics.find((comic) => comic.id === selectedTopic?.comicId)
@@ -161,7 +171,7 @@ export function AssetsPage() {
         const selected = Boolean(selectedTopicId && asset.topicIds.includes(selectedTopicId))
         const selectable = asset.visualFormat === 'single' && asset.reviewStatus === 'available'
         return <article className={`asset-card ${selected ? 'selected' : ''} ${!selectable ? 'blocked' : ''}`} key={asset.id}>
-          <div className={`asset-cover ${['pink', 'blue', 'purple', 'amber'][index % 4]} ${asset.visualFormat === 'collage' ? 'collage-preview' : ''}`}>{asset.previewUrl ? <img src={asset.previewUrl} alt={asset.originalName} /> : asset.visualFormat === 'collage' ? <><span>1</span><span>2</span></> : <><span>{index + 1}</span><FileImage size={24} /></>}</div>
+          <div className={`asset-cover ${['pink', 'blue', 'purple', 'amber'][index % 4]} ${asset.visualFormat === 'collage' ? 'collage-preview' : ''} ${asset.previewUrl ? 'is-previewable' : ''}`} role={asset.previewUrl ? 'button' : undefined} tabIndex={asset.previewUrl ? 0 : undefined} aria-label={asset.previewUrl ? `查看${asset.originalName}原图` : undefined} onClick={() => asset.previewUrl && setPreviewAsset(asset)} onKeyDown={(event) => { if (asset.previewUrl && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setPreviewAsset(asset) } }}>{asset.previewUrl ? <img src={asset.previewUrl} alt={asset.originalName} /> : asset.visualFormat === 'collage' ? <><span>1</span><span>2</span></> : <><span>{index + 1}</span><FileImage size={24} /></>}</div>
           <div className="asset-card-copy">
             <div className="asset-badge-row"><span className={`status-badge ${asset.visualFormat === 'single' ? 'green' : asset.visualFormat === 'uncertain' ? 'amber' : 'gray'}`}>{visualLabels[asset.visualFormat]}</span><span className="asset-type-chip">{contentTypeLabels[asset.contentType]}</span></div>
             <h3>{[asset.workName, asset.chapter].filter(Boolean).join(' · ') || asset.originalName}</h3>
@@ -174,6 +184,14 @@ export function AssetsPage() {
           </div>
         </article>
       })}</section> : <div className="panel empty-state tall">当前筛选条件下没有素材。</div>}
+
+      {previewAsset?.previewUrl && <div className="asset-lightbox" role="dialog" aria-modal="true" aria-label={`${previewAsset.originalName}原图预览`} onClick={() => setPreviewAsset(null)}>
+        <button className="asset-lightbox-close" type="button" aria-label="关闭原图预览" onClick={() => setPreviewAsset(null)}><X size={20} /></button>
+        <div className="asset-lightbox-content" onClick={(event) => event.stopPropagation()}>
+          <img src={previewAsset.previewUrl} alt={previewAsset.originalName} />
+          <p>{[previewAsset.workName, previewAsset.chapter].filter(Boolean).join(' · ') || previewAsset.originalName} · 原图预览</p>
+        </div>
+      </div>}
     </>
   )
 }
