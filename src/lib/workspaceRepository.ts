@@ -1,5 +1,5 @@
 import { demoState } from '../data/demo'
-import type { ComicSerializationStatus, ComicStatus, CopyrightStatus, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
+import type { AssetContentType, AssetReviewStatus, AssetVisualFormat, ComicSerializationStatus, ComicStatus, ContentBrief, CopyrightStatus, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
 import { supabase } from './supabase'
 
 function client() {
@@ -14,7 +14,7 @@ function formatTime(value?: string | null) {
 
 export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState> {
   const db = client()
-  const [accountsResult, comicsResult, topicsResult, referencesResult, tasksResult, schedulesResult, topicAssetsResult, assetsResult] = await Promise.all([
+  const [accountsResult, comicsResult, topicsResult, referencesResult, tasksResult, schedulesResult, topicAssetsResult, assetsResult, assetUsagesResult] = await Promise.all([
     db.from('accounts').select('*').eq('user_id', userId).is('archived_at', null).order('created_at'),
     db.from('comics').select('*').eq('user_id', userId).is('archived_at', null).order('created_at', { ascending: false }),
     db.from('topics').select('*').eq('user_id', userId).is('archived_at', null).order('created_at', { ascending: false }),
@@ -23,9 +23,11 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
     db.from('schedules').select('*').eq('user_id', userId).order('created_at'),
     db.from('topic_assets').select('topic_id, asset_id'),
     db.from('assets').select('*').eq('user_id', userId).is('archived_at', null).order('created_at', { ascending: false }),
+    db.from('asset_usages').select('*').eq('user_id', userId).order('used_at', { ascending: false }),
   ])
 
-  const failed = [accountsResult, comicsResult, topicsResult, referencesResult, tasksResult, schedulesResult, topicAssetsResult, assetsResult].find((result) => result.error)
+  const usageTableMissing = assetUsagesResult.error?.code === '42P01' || assetUsagesResult.error?.code === 'PGRST205'
+  const failed = [accountsResult, comicsResult, topicsResult, referencesResult, tasksResult, schedulesResult, topicAssetsResult, assetsResult, usageTableMissing ? null : assetUsagesResult].find((result) => result?.error)
   if (failed?.error) throw failed.error
 
   const assetRows = assetsResult.data ?? []
@@ -50,6 +52,7 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
   const references = (referencesResult.data ?? []).map((row) => ({
     id: row.id,
     accountId: row.account_id,
+    comicId: row.comic_id ?? undefined,
     title: row.title,
     author: row.author_name ?? '未知作者',
     sourceUrl: row.source_url,
@@ -58,6 +61,13 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
     comments: row.comments,
     capturedAt: formatTime(row.captured_at),
     insight: row.insight,
+    noteId: row.source_note_id ?? undefined,
+    body: row.body_text ?? row.body_excerpt ?? '',
+    publishedAt: row.published_at ? formatTime(row.published_at) : undefined,
+    imageCount: row.image_count ?? 0,
+    coverUrl: row.cover_url ?? undefined,
+    detailStatus: ['list_only', 'detailed', 'failed'].includes(row.detail_status) ? row.detail_status : 'list_only',
+    reviewStatus: ['candidate', 'kept', 'rejected'].includes(row.review_status) ? row.review_status : 'candidate',
   }))
 
   const referenceCounts = new Map<string, number>()
@@ -67,6 +77,14 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
   const assetCounts = new Map<string, number>()
   for (const row of topicAssetsResult.data ?? []) {
     assetCounts.set(row.topic_id, (assetCounts.get(row.topic_id) ?? 0) + 1)
+  }
+  const usagesByAsset = new Map<string, { count: number; covers: number; lastUsedAt?: string }>()
+  for (const row of usageTableMissing ? [] : assetUsagesResult.data ?? []) {
+    const current = usagesByAsset.get(row.asset_id) ?? { count: 0, covers: 0 }
+    current.count += 1
+    if (row.use_type === 'cover') current.covers += 1
+    if (!current.lastUsedAt) current.lastUsedAt = formatTime(row.used_at)
+    usagesByAsset.set(row.asset_id, current)
   }
 
   const storedAccount = localStorage.getItem('creator-ops-studio:active-account')
@@ -94,6 +112,7 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
     topics: (topicsResult.data ?? []).map((row) => ({
       id: row.id,
       accountId: row.account_id,
+      comicId: row.comic_id ?? undefined,
       title: row.title,
       subtitle: row.subtitle,
       status: row.status,
@@ -104,16 +123,25 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
       referenceCount: referenceCounts.get(row.id) ?? 0,
       assetCount: assetCounts.get(row.id) ?? 0,
       updatedAt: formatTime(row.updated_at),
+      brief: row.brief && typeof row.brief === 'object' && typeof row.brief.angle === 'string' ? row.brief as ContentBrief : undefined,
     })),
     references,
     researchTasks: (tasksResult.data ?? []).map((row) => ({
       id: row.id,
       accountId: row.account_id,
+      comicId: row.comic_id ?? undefined,
       keyword: row.keyword,
+      keywords: Array.isArray(row.keywords) && row.keywords.length ? row.keywords.map(String) : [row.keyword],
       purpose: row.purpose,
       status: ['queued', 'running', 'imported', 'failed'].includes(row.status) ? row.status : 'queued',
       limit: row.result_limit,
       createdAt: formatTime(row.created_at),
+      filters: {
+        noteType: 'image' as const,
+        publishedWithin: (['day', 'week', 'half_year'].includes(row.filter_config?.publishedWithin) ? row.filter_config.publishedWithin : 'week') as 'day' | 'week' | 'half_year',
+        scope: 'unseen' as const,
+        sort: 'most_liked' as const,
+      },
     })),
     schedules: (schedulesResult.data ?? []).map((row) => ({
       id: row.id,
@@ -125,6 +153,7 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
     assets: assetRows.map((row) => ({
       id: row.id,
       accountId: row.account_id,
+      comicId: row.comic_id ?? undefined,
       storagePath: row.storage_path,
       originalName: row.original_name,
       mimeType: row.mime_type,
@@ -138,6 +167,16 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
       createdAt: formatTime(row.created_at),
       previewUrl: signedUrls.get(row.storage_path),
       topicId: (topicAssetsResult.data ?? []).find((link) => link.asset_id === row.id)?.topic_id,
+      topicIds: (topicAssetsResult.data ?? []).filter((link) => link.asset_id === row.id).map((link) => link.topic_id),
+      visualFormat: (['single', 'collage', 'uncertain', 'invalid'].includes(row.visual_format) ? row.visual_format : 'uncertain') as AssetVisualFormat,
+      classificationConfidence: row.classification_confidence == null ? undefined : Number(row.classification_confidence),
+      classificationNote: row.classification_note ?? '',
+      reviewStatus: (['pending', 'available', 'rejected', 'archived'].includes(row.review_status) ? row.review_status : 'pending') as AssetReviewStatus,
+      contentType: (['cover', 'character', 'interaction', 'plot', 'dialogue', 'atmosphere', 'other'].includes(row.content_type) ? row.content_type : 'other') as AssetContentType,
+      characters: row.characters ?? [],
+      usageCount: usagesByAsset.get(row.id)?.count ?? 0,
+      coverUsageCount: usagesByAsset.get(row.id)?.covers ?? 0,
+      lastUsedAt: usagesByAsset.get(row.id)?.lastUsedAt,
     })),
   }
 }
@@ -165,10 +204,11 @@ export async function updateCloudComicStatus(comicId: string, status: ComicStatu
   if (error) throw error
 }
 
-export async function createCloudTopic(userId: string, accountId: string, input: Pick<Topic, 'title' | 'subtitle' | 'pillar'>) {
+export async function createCloudTopic(userId: string, accountId: string, input: Pick<Topic, 'title' | 'subtitle' | 'pillar' | 'comicId'>) {
   const { data, error } = await client().from('topics').insert({
     user_id: userId,
     account_id: accountId,
+    comic_id: input.comicId || null,
     title: input.title,
     subtitle: input.subtitle || '新建选题',
     pillar: input.pillar,
@@ -184,21 +224,67 @@ export async function updateCloudTopicStatus(topicId: string, status: TopicStatu
   if (error) throw error
 }
 
+export async function updateCloudTopicBrief(topicId: string, brief: ContentBrief) {
+  const { error } = await client().from('topics').update({ brief }).eq('id', topicId)
+  if (error) throw error
+}
+
+export async function updateCloudAssetReview(
+  assetId: string,
+  input: { visualFormat: AssetVisualFormat; reviewStatus: AssetReviewStatus; classificationNote: string },
+) {
+  const { error } = await client().from('assets').update({
+    visual_format: input.visualFormat,
+    review_status: input.reviewStatus,
+    classification_note: input.classificationNote,
+  }).eq('id', assetId)
+  if (error) throw error
+  if (input.visualFormat !== 'single' || input.reviewStatus !== 'available') {
+    const { error: linkError } = await client().from('topic_assets').delete().eq('asset_id', assetId)
+    if (linkError) throw linkError
+  }
+}
+
+export async function setCloudTopicAsset(topicId: string, assetId: string, selected: boolean, position: number) {
+  const db = client()
+  if (!selected) {
+    const { error } = await db.from('topic_assets').delete().eq('topic_id', topicId).eq('asset_id', assetId)
+    if (error) throw error
+    return
+  }
+  const { error } = await db.from('topic_assets').upsert({
+    topic_id: topicId,
+    asset_id: assetId,
+    position,
+    is_cover: position === 0,
+  }, { onConflict: 'topic_id,asset_id' })
+  if (error) throw error
+}
+
+export async function markCloudTopicPublished(topicId: string) {
+  const { data, error } = await client().rpc('mark_topic_published', { p_topic_id: topicId })
+  if (error) throw error
+  return data as string
+}
+
 export async function markCloudResearchImported(taskId: string) {
   const { error } = await client().from('research_tasks').update({ status: 'imported', completed_at: new Date().toISOString() }).eq('id', taskId)
   if (error) throw error
 }
 
-export async function createCloudResearchTask(userId: string, accountId: string, input: { keyword: string; purpose: string; limit: number }) {
+export async function createCloudResearchTask(userId: string, accountId: string, input: { comicId: string; keywords: string[]; purpose: string; limit: number }) {
   const { data, error } = await client().from('research_tasks').insert({
     user_id: userId,
     account_id: accountId,
-    keyword: input.keyword,
+    comic_id: input.comicId,
+    keyword: input.keywords[0],
+    keywords: input.keywords,
     purpose: input.purpose,
-    result_limit: Math.min(20, Math.max(1, input.limit)),
+    result_limit: Math.min(10, Math.max(1, input.limit)),
     status: 'queued',
     provider: 'opencli',
-    command_preview: `opencli xiaohongshu search ${JSON.stringify(input.keyword)} --limit ${input.limit} -f json`,
+    command_preview: `OpenCLI browser batch: ${input.keywords.map((keyword) => JSON.stringify(keyword)).join(', ')}; image + week + unseen + most_liked; total ${input.limit}`,
+    filter_config: { noteType: 'image', publishedWithin: 'week', scope: 'unseen', sort: 'most_liked' },
   }).select('*').single()
   if (error) throw error
   return data
@@ -206,10 +292,14 @@ export async function createCloudResearchTask(userId: string, accountId: string,
 
 export async function importCloudResearchResults(userId: string, accountId: string, taskId: string, results: XhsResearchResult[]) {
   const db = client()
+  const { data: task, error: taskLookupError } = await db.from('research_tasks').select('comic_id, topic_id').eq('id', taskId).single()
+  if (taskLookupError) throw taskLookupError
   if (results.length) {
     const { error: referenceError } = await db.from('references').upsert(results.map((result) => ({
       user_id: userId,
       account_id: accountId,
+      comic_id: task.comic_id,
+      topic_id: task.topic_id,
       platform: 'xiaohongshu',
       source_url: result.url,
       source_note_id: result.noteId || null,
@@ -218,7 +308,11 @@ export async function importCloudResearchResults(userId: string, accountId: stri
       likes: result.likes,
       published_at: result.publishedAt,
       insight: '',
-      raw_payload: { rank: result.rank, imported_from: 'opencli-search' },
+      body_text: '',
+      image_count: 0,
+      detail_status: 'list_only',
+      review_status: 'candidate',
+      raw_payload: { rank: result.rank, matched_keyword: result.matchedKeyword ?? null, imported_from: 'opencli-browser-filtered-search' },
     })), { onConflict: 'user_id,source_url', ignoreDuplicates: true })
     if (referenceError) throw referenceError
   }
@@ -235,7 +329,7 @@ export async function uploadCloudAssets(
   userId: string,
   accountId: string,
   files: File[],
-  metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; topicId?: string },
+  metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; comicId?: string; topicId?: string; visualFormat?: AssetVisualFormat; contentType?: AssetContentType; characters?: string[] },
 ) {
   const db = client()
   const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
@@ -252,6 +346,7 @@ export async function uploadCloudAssets(
     const { data: asset, error: assetError } = await db.from('assets').insert({
       user_id: userId,
       account_id: accountId,
+      comic_id: metadata.comicId || null,
       storage_path: storagePath,
       original_name: file.name,
       mime_type: file.type,
@@ -259,6 +354,12 @@ export async function uploadCloudAssets(
       source_url: metadata.sourceUrl || null,
       source_type: metadata.sourceType,
       tags: metadata.tags,
+      visual_format: metadata.visualFormat ?? 'uncertain',
+      review_status: metadata.visualFormat === 'single' ? 'available' : 'pending',
+      classification_note: metadata.visualFormat === 'single' ? '人工确认为单图' : '',
+      content_type: metadata.contentType ?? 'other',
+      characters: metadata.characters ?? [],
+      chapter_label: metadata.chapter,
       custom_fields: {
         workName: metadata.workName,
         chapter: metadata.chapter,
@@ -267,7 +368,7 @@ export async function uploadCloudAssets(
     }).select('id').single()
     if (assetError) throw assetError
 
-    if (metadata.topicId) {
+    if (metadata.topicId && metadata.visualFormat === 'single') {
       const { error: linkError } = await db.from('topic_assets').insert({ topic_id: metadata.topicId, asset_id: asset.id })
       if (linkError) throw linkError
     }
@@ -295,21 +396,41 @@ export async function seedCloudWorkspace(userId: string) {
     return id
   }
 
+  const { data: comicRows, error: comicError } = await db.from('comics').insert(demoState.comics.map((comic) => ({
+    user_id: userId,
+    account_id: resolveAccount(comic.accountId),
+    title: comic.title,
+    platform: comic.platform,
+    source_url: comic.sourceUrl ?? null,
+    cover_url: comic.coverUrl ?? null,
+    status: comic.status,
+    update_weekday: comic.updateWeekday ?? null,
+    update_note: comic.updateNote,
+    selection_note: comic.selectionNote,
+    custom_fields: { serialization_status: comic.serializationStatus },
+  }))).select('id, title')
+  if (comicError) throw comicError
+  const comicIds = new Map(demoState.comics.map((comic) => [comic.id, comicRows.find((row) => row.title === comic.title)?.id]))
+  const resolveComic = (demoComicId?: string) => demoComicId ? comicIds.get(demoComicId) ?? null : null
+
   const { error: topicError } = await db.from('topics').insert(demoState.topics.map((topic) => ({
     user_id: userId,
     account_id: resolveAccount(topic.accountId),
+    comic_id: resolveComic(topic.comicId),
     title: topic.title,
     subtitle: topic.subtitle,
     pillar: topic.pillar,
     status: topic.status,
     score: topic.score,
     tags: topic.tags,
+    brief: topic.brief ?? {},
   })))
   if (topicError) throw topicError
 
   const { error: referenceError } = await db.from('references').insert(demoState.references.map((reference) => ({
     user_id: userId,
     account_id: resolveAccount(reference.accountId),
+    comic_id: resolveComic(reference.comicId),
     source_url: `${reference.sourceUrl.replace(/\/$/, '')}/explore/${reference.id}`,
     author_name: reference.author,
     title: reference.title,
@@ -317,22 +438,30 @@ export async function seedCloudWorkspace(userId: string) {
     collects: reference.collects,
     comments: reference.comments,
     insight: reference.insight,
+    body_text: reference.body,
+    image_count: reference.imageCount,
+    detail_status: reference.detailStatus,
+    review_status: reference.reviewStatus,
   })))
   if (referenceError) throw referenceError
 
   const { error: taskError } = await db.from('research_tasks').insert(demoState.researchTasks.map((task) => ({
     user_id: userId,
     account_id: resolveAccount(task.accountId),
+    comic_id: resolveComic(task.comicId),
     keyword: task.keyword,
+    keywords: task.keywords,
     purpose: task.purpose,
     result_limit: task.limit,
     status: task.status,
+    filter_config: task.filters,
   })))
   if (taskError) throw taskError
 
   const { error: scheduleError } = await db.from('schedules').insert(demoState.schedules.map((schedule) => ({
     user_id: userId,
     account_id: resolveAccount(schedule.accountId),
+    comic_id: null,
     title: schedule.title,
     kind: schedule.kind,
     custom_fields: { dateLabel: schedule.dateLabel },

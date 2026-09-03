@@ -14,7 +14,18 @@ describe('demo workspace', () => {
     expect(demoState.assets.every((asset) => accountIds.has(asset.accountId))).toBe(true)
   })
 
-  it('uses conservative OpenCLI result limits', () => {
-    expect(demoState.researchTasks.every((task) => task.limit <= 20)).toBe(true)
+  it('uses bounded, comic-linked OpenCLI batches', () => {
+    expect(demoState.researchTasks.every((task) => task.limit <= 10)).toBe(true)
+    expect(demoState.researchTasks.every((task) => task.keywords.length >= 2 && task.keywords.length <= 3)).toBe(true)
+    expect(demoState.researchTasks.every((task) => demoState.comics.some((comic) => comic.id === task.comicId))).toBe(true)
+  })
+
+  it('only links selectable single-image assets to topics', () => {
+    const linkedAssets = demoState.assets.filter((asset) => asset.topicIds.length > 0)
+    expect(linkedAssets.every((asset) => asset.visualFormat === 'single' && asset.reviewStatus === 'available')).toBe(true)
+    for (const topic of demoState.topics) {
+      const linkedCount = demoState.assets.filter((asset) => asset.topicIds.includes(topic.id)).length
+      if (linkedCount > 0) expect(topic.assetCount).toBe(linkedCount)
+    }
   })
 })

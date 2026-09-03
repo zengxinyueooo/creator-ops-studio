@@ -12,11 +12,15 @@ import {
   loadCloudWorkspace,
   markCloudResearchImported,
   seedCloudWorkspace,
+  setCloudTopicAsset,
   uploadCloudAssets,
+  markCloudTopicPublished,
+  updateCloudAssetReview,
   updateCloudComicStatus,
+  updateCloudTopicBrief,
   updateCloudTopicStatus,
 } from '../lib/workspaceRepository'
-import type { Comic, ComicStatus, CopyrightStatus, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
+import type { AssetContentType, AssetItem, AssetReviewStatus, AssetVisualFormat, Comic, ComicStatus, ContentBrief, CopyrightStatus, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
 
 const STORAGE_KEY = 'creator-ops-studio:workspace:v1'
 const EMPTY_STATE: WorkspaceState = { accounts: [], activeAccountId: '', comics: [], topics: [], references: [], researchTasks: [], schedules: [], assets: [] }
@@ -29,11 +33,16 @@ interface WorkspaceContextValue {
   addComic: (input: Pick<Comic, 'title' | 'platform' | 'selectionNote'> & { sourceUrl: string }) => Promise<void>
   updateComicStatus: (comicId: string, status: ComicStatus) => Promise<void>
   updateTopicStatus: (topicId: string, status: TopicStatus) => void
-  addTopic: (input: Pick<Topic, 'title' | 'subtitle' | 'pillar'>) => void
+  generateTopicBrief: (topicId: string) => Promise<void>
+  setTopicBriefStatus: (topicId: string, status: 'candidate' | 'approved' | 'rejected') => Promise<void>
+  addTopic: (input: Pick<Topic, 'title' | 'subtitle' | 'pillar' | 'comicId'>) => void
   markResearchImported: (taskId: string) => void
-  addResearchTask: (input: { keyword: string; purpose: string; limit: number }) => Promise<void>
+  addResearchTask: (input: { comicId: string; keywords: string[]; purpose: string; limit: number }) => Promise<void>
   importResearchResults: (taskId: string, results: XhsResearchResult[]) => Promise<void>
-  uploadAssets: (files: File[], metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; topicId?: string }) => Promise<void>
+  uploadAssets: (files: File[], metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; comicId?: string; topicId?: string; visualFormat?: AssetVisualFormat; contentType?: AssetContentType; characters?: string[] }) => Promise<void>
+  reviewAsset: (assetId: string, visualFormat: AssetVisualFormat, reviewStatus: AssetReviewStatus) => Promise<void>
+  toggleTopicAsset: (topicId: string, assetId: string) => Promise<void>
+  markTopicPublished: (topicId: string) => Promise<void>
   resetDemo: () => void
 }
 
@@ -50,10 +59,30 @@ function loadLocalState(): WorkspaceState {
       accounts: parsed.accounts ?? demoState.accounts,
       comics: parsed.comics ?? [],
       topics: parsed.topics ?? [],
-      references: parsed.references ?? [],
-      researchTasks: parsed.researchTasks ?? [],
+      references: (parsed.references ?? []).map((reference) => ({
+        ...reference,
+        body: reference.body ?? '',
+        imageCount: reference.imageCount ?? 0,
+        detailStatus: reference.detailStatus ?? 'list_only',
+        reviewStatus: reference.reviewStatus ?? 'candidate',
+      })),
+      researchTasks: (parsed.researchTasks ?? []).map((task) => ({
+        ...task,
+        keywords: task.keywords?.length ? task.keywords : [task.keyword],
+        filters: task.filters ?? { noteType: 'image', publishedWithin: 'week', scope: 'unseen', sort: 'most_liked' },
+      })),
       schedules: parsed.schedules ?? [],
-      assets: parsed.assets ?? [],
+      assets: (parsed.assets ?? []).map((asset) => ({
+        ...asset,
+        topicIds: asset.topicIds ?? (asset.topicId ? [asset.topicId] : []),
+        visualFormat: asset.visualFormat ?? 'uncertain',
+        classificationNote: asset.classificationNote ?? '',
+        reviewStatus: asset.reviewStatus ?? 'pending',
+        contentType: asset.contentType ?? 'other',
+        characters: asset.characters ?? [],
+        usageCount: asset.usageCount ?? 0,
+        coverUsageCount: asset.coverUsageCount ?? 0,
+      })),
     }
   } catch {
     return demoState
@@ -114,6 +143,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             sourceUrl: row.source_url ?? undefined,
             coverUrl: row.cover_url ?? undefined,
             status: row.status,
+            serializationStatus: 'unknown',
             updateWeekday: row.update_weekday ?? undefined,
             updateNote: row.update_note,
             selectionNote: row.selection_note,
@@ -131,6 +161,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           platform: input.platform,
           sourceUrl: input.sourceUrl || undefined,
           status: 'candidate',
+          serializationStatus: 'unknown',
           updateNote: '',
           selectionNote: input.selectionNote,
           createdAt: '刚刚',
@@ -166,6 +197,36 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         })
       }
     },
+    generateTopicBrief: async (topicId) => {
+      const topic = state.topics.find((item) => item.id === topicId)
+      if (!topic) throw new Error('选题不存在')
+      const comic = state.comics.find((item) => item.id === topic.comicId)
+      const emotion = topic.tags.slice(0, 3).join('、') || '情绪反差、角色关系'
+      const brief: ContentBrief = {
+        status: 'candidate',
+        angle: `围绕${comic ? `《${comic.title}》` : topic.subtitle}的“${topic.title}”展开，用具体画面呈现角色关系和情绪变化。`,
+        coreEmotion: emotion,
+        hook: `${topic.title}，真正戳人的其实是这一刻的反应。`,
+        structure: ['用最直观的关键画面开场', '补充角色反应或前后反差', '加入个人感受并用问题邀请讨论'],
+        assetGuidance: ['能直接对应标题的主画面', '角色表情或动作特写', '关系变化清晰的同框画面'],
+        avoidances: ['不照搬来源笔记句式', '不泄露超出当前选题的关键剧情'],
+      }
+      if (dataMode === 'supabase') await updateCloudTopicBrief(topicId, brief)
+      setState((current) => ({
+        ...current,
+        topics: current.topics.map((item) => item.id === topicId ? { ...item, brief, updatedAt: '刚刚' } : item),
+      }))
+    },
+    setTopicBriefStatus: async (topicId, status) => {
+      const topic = state.topics.find((item) => item.id === topicId)
+      if (!topic?.brief) throw new Error('这个选题还没有可审核的 Brief')
+      const brief = { ...topic.brief, status }
+      if (dataMode === 'supabase') await updateCloudTopicBrief(topicId, brief)
+      setState((current) => ({
+        ...current,
+        topics: current.topics.map((item) => item.id === topicId ? { ...item, brief, updatedAt: '刚刚' } : item),
+      }))
+    },
     addTopic: (input) => {
       if (dataMode === 'supabase' && user) {
         void createCloudTopic(user.id, state.activeAccountId, input).then((row) => {
@@ -174,6 +235,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             topics: [{
               id: row.id,
               accountId: row.account_id,
+              comicId: row.comic_id ?? undefined,
               title: row.title,
               subtitle: row.subtitle,
               status: row.status,
@@ -193,6 +255,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         topics: [{
           id: crypto.randomUUID(),
           accountId: current.activeAccountId,
+          comicId: input.comicId,
           title: input.title,
           subtitle: input.subtitle || '新建选题',
           status: 'idea',
@@ -226,11 +289,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           researchTasks: [{
             id: row.id,
             accountId: row.account_id,
+            comicId: row.comic_id ?? undefined,
             keyword: row.keyword,
+            keywords: row.keywords?.length ? row.keywords : [row.keyword],
             purpose: row.purpose,
             status: 'queued',
             limit: row.result_limit,
             createdAt: '刚刚',
+            filters: { noteType: 'image', publishedWithin: 'week', scope: 'unseen', sort: 'most_liked' },
           }, ...current.researchTasks],
         }))
         return
@@ -240,11 +306,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         researchTasks: [{
           id: crypto.randomUUID(),
           accountId: current.activeAccountId,
-          keyword: input.keyword,
+          comicId: input.comicId,
+          keyword: input.keywords[0],
+          keywords: input.keywords,
           purpose: input.purpose,
           status: 'queued',
           limit: input.limit,
           createdAt: '刚刚',
+          filters: { noteType: 'image', publishedWithin: 'week', scope: 'unseen', sort: 'most_liked' },
         }, ...current.researchTasks],
       }))
     },
@@ -259,6 +328,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         references: [...results.map((result) => ({
           id: crypto.randomUUID(),
           accountId: current.activeAccountId,
+          comicId: state.researchTasks.find((task) => task.id === taskId)?.comicId,
           title: result.title,
           author: result.author,
           sourceUrl: result.url,
@@ -267,6 +337,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           comments: 0,
           capturedAt: '刚刚',
           insight: '',
+          noteId: result.noteId || undefined,
+          body: '',
+          publishedAt: result.publishedAt || undefined,
+          imageCount: 0,
+          detailStatus: 'list_only' as const,
+          reviewStatus: 'candidate' as const,
         })), ...current.references],
         researchTasks: current.researchTasks.map((task) => task.id === taskId ? { ...task, status: 'imported' } : task),
       }))
@@ -279,9 +355,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
       setState((current) => ({
         ...current,
-        assets: [...files.map((file) => ({
+        assets: [...files.map((file): AssetItem => ({
           id: crypto.randomUUID(),
           accountId: current.activeAccountId,
+          comicId: metadata.comicId,
           storagePath: '',
           originalName: file.name,
           mimeType: file.type,
@@ -295,7 +372,78 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           createdAt: '刚刚',
           previewUrl: URL.createObjectURL(file),
           topicId: metadata.topicId,
+          topicIds: metadata.topicId ? [metadata.topicId] : [],
+          visualFormat: metadata.visualFormat ?? 'uncertain',
+          classificationNote: metadata.visualFormat === 'single' ? '人工确认为单图' : '',
+          reviewStatus: metadata.visualFormat === 'single' ? 'available' : 'pending',
+          contentType: metadata.contentType ?? 'other',
+          characters: metadata.characters ?? [],
+          usageCount: 0,
+          coverUsageCount: 0,
         })), ...current.assets],
+      }))
+    },
+    reviewAsset: async (assetId, visualFormat, reviewStatus) => {
+      const asset = state.assets.find((item) => item.id === assetId)
+      if (!asset) throw new Error('素材不存在')
+      const classificationNote = visualFormat === 'single' ? '人工确认为单图' : visualFormat === 'collage' ? '人工确认为拼图' : asset.classificationNote
+      if (dataMode === 'supabase') {
+        await updateCloudAssetReview(assetId, { visualFormat, reviewStatus, classificationNote })
+        await reload()
+        return
+      }
+      setState((current) => ({
+        ...current,
+        assets: current.assets.map((item) => item.id === assetId ? {
+          ...item,
+          visualFormat,
+          reviewStatus,
+          classificationNote,
+          topicIds: visualFormat === 'single' && reviewStatus === 'available' ? item.topicIds : [],
+          topicId: visualFormat === 'single' && reviewStatus === 'available' ? item.topicId : undefined,
+        } : item),
+        topics: visualFormat === 'single' && reviewStatus === 'available'
+          ? current.topics
+          : current.topics.map((topic) => asset.topicIds.includes(topic.id)
+            ? { ...topic, assetCount: Math.max(0, topic.assetCount - 1), updatedAt: '刚刚' }
+            : topic),
+      }))
+    },
+    toggleTopicAsset: async (topicId, assetId) => {
+      const asset = state.assets.find((item) => item.id === assetId)
+      if (!asset) throw new Error('素材不存在')
+      if (asset.visualFormat !== 'single' || asset.reviewStatus !== 'available') throw new Error('只有审核通过的单图可以选择')
+      const selected = !asset.topicIds.includes(topicId)
+      const position = state.assets.filter((item) => item.topicIds.includes(topicId)).length
+      if (dataMode === 'supabase') {
+        await setCloudTopicAsset(topicId, assetId, selected, position)
+        await reload()
+        return
+      }
+      setState((current) => ({
+        ...current,
+        assets: current.assets.map((item) => item.id === assetId ? {
+          ...item,
+          topicIds: selected ? [...item.topicIds, topicId] : item.topicIds.filter((id) => id !== topicId),
+          topicId: selected ? topicId : item.topicId === topicId ? undefined : item.topicId,
+        } : item),
+        topics: current.topics.map((topic) => topic.id === topicId ? { ...topic, assetCount: Math.max(0, topic.assetCount + (selected ? 1 : -1)), updatedAt: '刚刚' } : topic),
+      }))
+    },
+    markTopicPublished: async (topicId) => {
+      const topic = state.topics.find((item) => item.id === topicId)
+      if (!topic) throw new Error('选题不存在')
+      const selectedAssets = state.assets.filter((asset) => asset.topicIds.includes(topicId) && asset.visualFormat === 'single' && asset.reviewStatus === 'available')
+      if (!selectedAssets.length) throw new Error('请先为这个 Brief 选择至少一张单图素材')
+      if (dataMode === 'supabase') {
+        await markCloudTopicPublished(topicId)
+        await reload()
+        return
+      }
+      setState((current) => ({
+        ...current,
+        topics: current.topics.map((item) => item.id === topicId ? { ...item, status: 'published', updatedAt: '刚刚' } : item),
+        assets: current.assets.map((asset) => selectedAssets.some((selectedAsset) => selectedAsset.id === asset.id) ? { ...asset, usageCount: asset.usageCount + 1, coverUsageCount: asset.coverUsageCount + (selectedAssets[0]?.id === asset.id ? 1 : 0), lastUsedAt: '刚刚' } : asset),
       }))
     },
     resetDemo: () => dataMode === 'local' ? setState(demoState) : void reload(),

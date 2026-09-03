@@ -1,8 +1,8 @@
-import { Clock3, FileImage, Link2 } from 'lucide-react'
+import { Clock3, Eye, FileImage, Link2 } from 'lucide-react'
 import { statusMeta } from '../data/status'
 import type { Topic, TopicStatus } from '../types'
 
-export function TopicCard({ topic, compact = false, onStatusChange }: { topic: Topic; compact?: boolean; onStatusChange?: (status: TopicStatus) => void }) {
+export function TopicCard({ topic, compact = false, onStatusChange, onOpenBrief, onCreateBrief }: { topic: Topic; compact?: boolean; onStatusChange?: (status: TopicStatus) => void; onOpenBrief?: () => void; onCreateBrief?: () => void }) {
   const meta = statusMeta[topic.status]
   return (
     <article className={`topic-card ${compact ? 'compact' : ''}`}>
@@ -12,9 +12,13 @@ export function TopicCard({ topic, compact = false, onStatusChange }: { topic: T
       <div className="tag-row">{topic.tags.map((tag) => <span key={tag}>#{tag}</span>)}</div>
       <div className="topic-meta"><span><Link2 size={14} />{topic.referenceCount}</span><span><FileImage size={14} />{topic.assetCount}</span>{topic.dueAt && <span><Clock3 size={14} />{topic.dueAt}</span>}</div>
       {onStatusChange && (
-        <select className="status-select" value={topic.status} onChange={(event) => onStatusChange(event.target.value as TopicStatus)} aria-label="调整选题状态">
-          {Object.entries(statusMeta).map(([status, item]) => <option key={status} value={status}>{item.label}</option>)}
-        </select>
+        <div className="topic-card-actions">
+          <select className="status-select" value={topic.status} onChange={(event) => onStatusChange(event.target.value as TopicStatus)} aria-label="调整选题状态">
+            {Object.entries(statusMeta).map(([status, item]) => <option key={status} value={status}>{item.label}</option>)}
+          </select>
+          {topic.brief && <button className="brief-link-button" type="button" onClick={onOpenBrief}><Eye size={13} />查看 Brief</button>}
+          {!topic.brief && onCreateBrief && <button className="brief-link-button" type="button" onClick={onCreateBrief}><Eye size={13} />生成 Brief</button>}
+        </div>
       )}
     </article>
   )
