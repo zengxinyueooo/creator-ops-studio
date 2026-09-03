@@ -24,7 +24,7 @@ Use the OpenCLI Xiaohongshu adapter, not hand-written requests to Xiaohongshu. L
 - Check `opencli doctor` first.
 - Use a full signed note URL or supported short link.
 - Retrieve the note details once, then download its media once to a local ignored temporary directory such as `.tmp/asset-ingestion/<note-id>/`.
-- Keep the note ID, title, author, original source URL, and downloaded image order. A signed URL may expire, so the note ID is the durable deduplication key.
+- Keep the note ID, title, author, original source URL, topic hashtags, and downloaded image order. A signed URL may expire, so the note ID is the durable deduplication key.
 - Keep activity read-only: do not like, save, follow, comment, publish, or repeatedly reload the note.
 
 ## Classify before writing
@@ -50,9 +50,15 @@ Every stored asset must include:
 - Account ID, comic ID, original filename, MIME type, byte size, storage path.
 - `source_type: xiaohongshu`, original source URL, and stable `sourceNoteId` in `custom_fields` when the importer supports it.
 - `copyrightStatus: reference_only` in `custom_fields` unless the user supplies stronger rights information.
-- Work name, a note-title-derived chapter/segment label, source-note image order, and default tags.
+- Work name, a note-title-derived chapter/segment label, source-note image order, and semantic content tags.
 
-Use default tags sparingly: `单图` or `拼图`, plus a concrete segment tag when the note makes it clear (for example `新特典`). The comic relationship belongs in `comic_id`, not a redundant free-text tag. Do not fabricate emotional or character tags merely to make filtering look richer.
+Use at most three semantic tags per image, with at most one from each group when possible:
+
+- Emotion: `甜`, `暧昧`, `心动`, `治愈`, `轻松`, `紧张`, `虐心`, `悬念`, `反差萌`.
+- Relationship or story beat: `对视`, `承诺`, `守护`, `吃醋`, `信任危机`, `关系推进`, `设定揭秘`.
+- Visual expression: `双人同框`, `双人对话`, `人物特写`, `亲密距离`, `萌宠`.
+
+Use only what the image or its visible dialogue supports. Treat note hashtags as candidate evidence: deduplicate them, retain them in `custom_fields.sourceNoteTags` for traceability, and promote one to a visible content tag only when it describes the actual image. `单图`/`拼图` belong in `visual_format`; characters, content type, chapter labels, and source terms such as `新特典` have their own fields. Never use placeholder tags such as `测试`.
 
 Deduplicate within the active account by stable note ID plus image index/original filename before upload. Preserve an existing asset rather than creating another copy. Never auto-link assets to a Brief; that remains a user review action.
 
