@@ -57,7 +57,7 @@ opencli doctor
 opencli xiaohongshu whoami -f json
 ```
 
-Use only read commands. For each title, search at least three distinct intents, adapting wording to the title:
+Use only read commands. Every Xiaohongshu query must contain the canonical comic title (or an explicitly recorded title alias). Put the comic title first; intent words such as `漫画`, `名场面`, `特典`, or `更新` may follow it, but never search a generic intent by itself. For each title, search at least three distinct intents, adapting wording to the title:
 
 ```bash
 opencli xiaohongshu search "<作品名> 漫画" --limit 20 -f json
@@ -68,6 +68,8 @@ opencli xiaohongshu search "<作品名> 重温" --limit 20 -f json
 For ongoing titles, add an update-oriented query such as `"<作品名> 更新"`. For romance or nostalgia-heavy works, alternatives such as `白月光`, `意难平`, or a verified character name are acceptable when they test a genuinely different intent.
 
 Keep query, retrieval time, note URL or note ID, title, author, raw likes, normalized likes, and published time. Never fabricate missing engagement or dates.
+
+Before a note can support comic-specific demand, validate relevance from the note title and, when available, the note body or hashtags. If neither contains the comic title or a verified alias, classify the note as an off-topic false positive and exclude it from the candidate evidence set. Keep the exclusion reason for review; do not silently treat generic keyword matches as comic demand.
 
 Normalize and deduplicate exported search JSON with:
 
