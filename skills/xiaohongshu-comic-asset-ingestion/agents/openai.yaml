@@ -1,0 +1,4 @@
+interface:
+  display_name: "漫画素材入库"
+  short_description: "把已选小红书笔记的图片沉淀为漫画素材"
+  default_prompt: "Use $xiaohongshu-comic-asset-ingestion to import all images from this selected Xiaohongshu note into the specified comic's asset library."
