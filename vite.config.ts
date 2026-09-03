@@ -29,7 +29,12 @@ function sanitizeXhsUrl(value: unknown) {
   try {
     const url = new URL(String(value))
     if (!['www.xiaohongshu.com', 'xiaohongshu.com'].includes(url.hostname)) return ''
-    url.search = ''
+    const accessParams = new URLSearchParams()
+    for (const name of ['xsec_token', 'xsec_source']) {
+      const parameter = url.searchParams.get(name)
+      if (parameter) accessParams.set(name, parameter)
+    }
+    url.search = accessParams.toString()
     url.hash = ''
     return url.toString()
   } catch {
@@ -211,8 +216,9 @@ function localOpenCliPlugin() {
           for (const keyword of keywords) {
             const notes = await searchOneKeyword(session, keyword)
             for (const note of notes) {
-              const existing = byUrl.get(note.url)
-              if (!existing || note.likes > existing.likes) byUrl.set(note.url, note)
+              const identity = note.noteId || note.url
+              const existing = byUrl.get(identity)
+              if (!existing || note.likes > existing.likes) byUrl.set(identity, note)
             }
           }
           const results = [...byUrl.values()]
