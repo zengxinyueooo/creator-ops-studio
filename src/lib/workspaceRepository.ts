@@ -424,7 +424,7 @@ export async function importCloudResearchResults(userId: string, accountId: stri
       body_text: '',
       image_count: 0,
       detail_status: 'list_only',
-      review_status: 'candidate',
+      review_status: 'kept',
       raw_payload: { rank: result.rank, matched_keyword: result.matchedKeyword ?? null, imported_from: 'opencli-browser-filtered-search' },
     })), { onConflict: 'user_id,source_url', ignoreDuplicates: true })
     if (referenceError) throw referenceError

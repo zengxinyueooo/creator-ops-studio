@@ -384,7 +384,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           hashtags: [],
           detailError: '',
           detailStatus: 'list_only' as const,
-          reviewStatus: 'candidate' as const,
+          reviewStatus: 'kept' as const,
         })), ...current.references],
         researchTasks: current.researchTasks.map((task) => task.id === taskId ? { ...task, status: 'imported' } : task),
       }))

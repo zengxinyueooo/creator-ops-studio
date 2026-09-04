@@ -118,7 +118,7 @@ export function ResearchPage() {
         delete next[taskId]
         return next
       })
-      setMessage(`已将 ${approved.length} 条笔记写入参考候选库，仍需你决定保留或排除。`)
+      setMessage(`已将 ${approved.length} 条笔记保留为参考资产。下一步可直接采集正文和素材，或选择同一漫画的笔记创建选题草案。`)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '导入 Supabase 失败')
     } finally {
@@ -239,7 +239,7 @@ export function ResearchPage() {
       </section>
 
       <section className="panel reference-library">
-        <div className="panel-heading"><div><h2>参考笔记候选库</h2><p>导入不等于采用；保留后可采集完整正文与素材，再把同一部漫画的参考笔记合并为一个选题。</p></div><span className="count-chip">{references.length} 条笔记</span></div>
+        <div className="panel-heading"><div><h2>参考笔记库</h2><p>你确认导入的笔记已直接保留；可采集完整正文与素材，再选择同一部漫画的 1–多条笔记创建选题草案。</p></div><span className="count-chip">{references.length} 条笔记</span></div>
         <div className="reference-toolbar"><label className="reference-search"><Search size={15} /><input value={referenceQuery} onChange={(event) => setReferenceQuery(event.target.value)} placeholder="搜索标题、作者或漫画" /></label><div className="reference-filter-tabs">{(['all', 'candidate', 'kept', 'rejected'] as ReferenceFilter[]).map((filter) => <button type="button" className={referenceFilter === filter ? 'active' : ''} onClick={() => setReferenceFilter(filter)} key={filter}>{filter === 'all' ? '全部' : reviewLabels[filter].label}</button>)}</div></div>
 
         {visibleReferences.length ? <div className="reference-list">{visibleReferences.map((reference) => {
