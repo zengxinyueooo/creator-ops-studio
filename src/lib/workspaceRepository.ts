@@ -1,5 +1,5 @@
 import { demoState } from '../data/demo'
-import type { AssetContentType, AssetReviewStatus, AssetVisualFormat, ComicSerializationStatus, ComicStatus, ContentBrief, CopyrightStatus, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
+import type { AssetContentType, AssetReviewStatus, AssetVisualFormat, ComicSerializationStatus, ComicStatus, ContentBrief, CopyrightStatus, ReferenceItem, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
 import { supabase } from './supabase'
 
 function client() {
@@ -176,6 +176,8 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
       mimeType: row.mime_type,
       byteSize: Number(row.byte_size),
       sourceUrl: row.source_url ?? undefined,
+      sourceReferenceId: row.source_reference_id ?? undefined,
+      sourcePosition: row.source_position ?? undefined,
       sourceType: row.source_type,
       tags: row.tags ?? [],
       workName: typeof row.custom_fields?.workName === 'string' ? row.custom_fields.workName : '',
@@ -267,6 +269,35 @@ export async function createCloudTopicFromReferences(
 
 export async function updateCloudReferenceReview(referenceId: string, reviewStatus: 'candidate' | 'kept' | 'rejected') {
   const { error } = await client().from('references').update({ review_status: reviewStatus }).eq('id', referenceId)
+  if (error) throw error
+}
+
+export async function updateCloudReferenceDetail(
+  referenceId: string,
+  detail: Pick<ReferenceItem, 'title' | 'author' | 'body' | 'likes' | 'collects' | 'comments' | 'hashtags' | 'imageCount'> & { noteId?: string },
+) {
+  const { error } = await client().from('references').update({
+    title: detail.title || '无标题',
+    author_name: detail.author || '未知作者',
+    body_text: detail.body,
+    likes: detail.likes,
+    collects: detail.collects,
+    comments: detail.comments,
+    hashtags: detail.hashtags,
+    image_count: detail.imageCount,
+    source_note_id: detail.noteId || null,
+    detail_status: 'detailed',
+    detail_error: null,
+    detail_captured_at: new Date().toISOString(),
+  }).eq('id', referenceId)
+  if (error) throw error
+}
+
+export async function markCloudReferenceDetailFailed(referenceId: string, message: string) {
+  const { error } = await client().from('references').update({
+    detail_status: 'failed',
+    detail_error: message.slice(0, 500),
+  }).eq('id', referenceId)
   if (error) throw error
 }
 
@@ -383,13 +414,24 @@ export async function uploadCloudAssets(
   userId: string,
   accountId: string,
   files: File[],
-  metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; comicId?: string; topicId?: string; sourceReferenceId?: string; visualFormat?: AssetVisualFormat; contentType?: AssetContentType; characters?: string[] },
+  metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; comicId?: string; topicId?: string; sourceReferenceId?: string; sourceNoteId?: string; sourceNoteTags?: string[]; visualFormat?: AssetVisualFormat; contentType?: AssetContentType; characters?: string[] },
 ) {
   const db = client()
   const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
-  if (!files.length || files.length > 10) throw new Error('每次请选择 1–10 张图片')
+  if (!files.length || files.length > 20) throw new Error('每次请选择 1–20 张图片')
+
+  const existingPositions = new Set<number>()
+  if (metadata.sourceReferenceId) {
+    const { data, error } = await db.from('assets').select('source_position')
+      .eq('user_id', userId).eq('account_id', accountId).eq('source_reference_id', metadata.sourceReferenceId)
+    if (error) throw error
+    for (const row of data ?? []) {
+      if (typeof row.source_position === 'number') existingPositions.add(row.source_position)
+    }
+  }
 
   for (const [fileIndex, file] of files.entries()) {
+    if (metadata.sourceReferenceId && existingPositions.has(fileIndex + 1)) continue
     if (!allowedTypes.has(file.type)) throw new Error(`${file.name} 不是支持的图片格式`)
     if (file.size > 15 * 1024 * 1024) throw new Error(`${file.name} 超过 15MB`)
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(-100) || 'image'
@@ -420,6 +462,8 @@ export async function uploadCloudAssets(
         workName: metadata.workName,
         chapter: metadata.chapter,
         copyrightStatus: metadata.copyrightStatus,
+        sourceNoteId: metadata.sourceNoteId || null,
+        sourceNoteTags: metadata.sourceNoteTags ?? [],
       },
     }).select('id').single()
     if (assetError) throw assetError

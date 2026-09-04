@@ -1,6 +1,8 @@
 import react from '@vitejs/plugin-react'
+import { randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname, resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -15,6 +17,8 @@ const FILTER_OPTION_SELECTOR = '#app span'
 type BrowserFindEntry = { ref?: number; text?: string; visible?: boolean; attrs?: Record<string, string> }
 type BrowserFindResult = { matches_n?: number; entries?: BrowserFindEntry[]; error?: { message?: string } }
 type RawNote = { title?: unknown; author?: unknown; likes?: unknown; url?: unknown }
+type DownloadedImage = { filename: string; path: string; mimeType: string; byteSize: number }
+type CaptureFile = DownloadedImage & { expiresAt: number }
 
 function parseMetric(value: unknown) {
   const text = String(value ?? '0').trim().replace(/,/g, '')
@@ -23,6 +27,27 @@ function parseMetric(value: unknown) {
   if (text.includes('万')) return Math.round(number * 10_000)
   if (text.toLowerCase().includes('k')) return Math.round(number * 1_000)
   return Math.round(number)
+}
+
+function parseTags(value: unknown) {
+  if (typeof value !== 'string') return []
+  return [...new Set(value.split(/[，,]/).map((item) => item.trim().replace(/^#/, '')).filter(Boolean))].slice(0, 20)
+}
+
+function extensionForMime(mimeType: string) {
+  return mimeType === 'image/png' ? '.png' : mimeType === 'image/webp' ? '.webp' : mimeType === 'image/gif' ? '.gif' : '.jpg'
+}
+
+function detectImageMime(buffer: Buffer) {
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg'
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png'
+  if (buffer.length >= 6 && (buffer.subarray(0, 6).toString() === 'GIF87a' || buffer.subarray(0, 6).toString() === 'GIF89a')) return 'image/gif'
+  if (buffer.length >= 12 && buffer.subarray(0, 4).toString() === 'RIFF' && buffer.subarray(8, 12).toString() === 'WEBP') return 'image/webp'
+  return ''
+}
+
+function sourceNoteIdFromUrl(sourceUrl: string) {
+  return sourceUrl.match(/\/(?:search_result|explore|note)\/([0-9a-f]{24})(?=[?#/]|$)/i)?.[1] ?? ''
 }
 
 function sanitizeXhsUrl(value: unknown) {
@@ -163,7 +188,7 @@ async function searchOneKeyword(session: string, keyword: string) {
     const cleanUrl = sanitizeXhsUrl(note.url)
     return {
       rank: 0,
-      noteId: cleanUrl.split('/').filter(Boolean).at(-1) ?? '',
+      noteId: sourceNoteIdFromUrl(cleanUrl),
       title: String(note.title ?? '无标题'),
       author: String(note.author ?? '未知作者') || '未知作者',
       likes: parseMetric(note.likes),
@@ -183,7 +208,36 @@ async function readJsonBody(req: IncomingMessage) {
   return JSON.parse(body) as { keywords?: unknown; requiredComicTitle?: unknown; limit?: unknown }
 }
 
+async function readDownloadedImages(outputRoot: string) {
+  const directories = await readdir(outputRoot, { withFileTypes: true })
+  const candidates = await Promise.all(directories.flatMap((entry) => {
+    if (!entry.isDirectory()) return []
+    const directory = resolve(outputRoot, entry.name)
+    return [readdir(directory, { withFileTypes: true }).then((items) => items
+      .filter((item) => item.isFile())
+      .map((item) => resolve(directory, item.name)))]
+  }))
+  const files = candidates.flat()
+  const images: DownloadedImage[] = []
+  for (const path of files) {
+    const sample = await readFile(path)
+    const mimeType = detectImageMime(sample.subarray(0, 16))
+    if (!mimeType) continue
+    const fileStat = await stat(path)
+    const filename = path.split(/[\\/]/).at(-1) ?? `image-${images.length + 1}${extensionForMime(mimeType)}`
+    const normalizedName = `${filename.replace(/\.[^.]+$/, '')}${extensionForMime(mimeType)}`
+    images.push({ filename: normalizedName, path, mimeType, byteSize: fileStat.size })
+  }
+  return images.sort((left, right) => left.filename.localeCompare(right.filename, undefined, { numeric: true }))
+}
+
+function isLocalBridgeRequest(req: IncomingMessage) {
+  const remoteAddress = req.socket.remoteAddress ?? ''
+  return ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remoteAddress) && req.headers['x-creator-ops-bridge'] === '1'
+}
+
 function localOpenCliPlugin() {
+  const captures = new Map<string, Map<string, CaptureFile>>()
   return {
     name: 'local-opencli-xhs-bridge',
     configureServer(server: { middlewares: { use: (path: string, handler: (req: IncomingMessage, res: ServerResponse) => void) => void } }) {
@@ -194,9 +248,7 @@ function localOpenCliPlugin() {
           res.end(JSON.stringify({ error: '只允许 POST 请求' }))
           return
         }
-        const remoteAddress = req.socket.remoteAddress ?? ''
-        const isLoopback = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remoteAddress)
-        if (!isLoopback || req.headers['x-creator-ops-bridge'] !== '1') {
+        if (!isLocalBridgeRequest(req)) {
           res.statusCode = 403
           res.end(JSON.stringify({ error: '仅允许 Creator Ops 本地页面调用' }))
           return
@@ -237,6 +289,95 @@ function localOpenCliPlugin() {
           res.end(JSON.stringify({ error: message }))
         } finally {
           void runOpenCli(['browser', session, 'close', '--window', 'background'], 15_000).catch(() => undefined)
+        }
+      })
+
+      server.middlewares.use('/api/opencli/xhs-note-capture', async (req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        if (req.method !== 'POST') {
+          res.statusCode = 405
+          res.end(JSON.stringify({ error: '只允许 POST 请求' }))
+          return
+        }
+        if (!isLocalBridgeRequest(req)) {
+          res.statusCode = 403
+          res.end(JSON.stringify({ error: '仅允许 Creator Ops 本地页面调用' }))
+          return
+        }
+        try {
+          const input = await readJsonBody(req)
+          const sourceUrl = sanitizeXhsUrl((input as { sourceUrl?: unknown }).sourceUrl)
+          if (!sourceUrl || !sourceUrl.includes('xsec_token=')) throw new Error('笔记链接缺少有效访问参数，请重新从调研结果导入')
+          const noteId = sourceNoteIdFromUrl(sourceUrl)
+          if (!noteId) throw new Error('无法从笔记链接识别笔记 ID，已停止本次采集')
+
+          const rawDetail = await runOpenCli(['xiaohongshu', 'note', sourceUrl, '-f', 'json', '--window', 'background'], 90_000)
+          const detailRows = parseJson<Array<{ field?: unknown; value?: unknown }>>(rawDetail, '读取笔记详情时')
+          const field = (name: string) => String(detailRows.find((row) => row.field === name)?.value ?? '').trim()
+          const captureToken = randomUUID()
+          const outputRoot = resolve(projectRoot, '.tmp', 'asset-ingestion', captureToken)
+          await runOpenCli(['xiaohongshu', 'download', sourceUrl, '--output', outputRoot, '-f', 'json', '--window', 'background'], 240_000)
+          const downloadedImages = await readDownloadedImages(outputRoot)
+          if (!downloadedImages.length) throw new Error('该笔记未下载到可识别的图片，已停止写入素材库')
+
+          const expiresAt = Date.now() + 30 * 60 * 1000
+          const files = new Map<string, CaptureFile>()
+          for (const image of downloadedImages) files.set(image.filename, { ...image, expiresAt })
+          captures.set(captureToken, files)
+          for (const [token, stored] of captures) {
+            if ([...stored.values()].every((file) => file.expiresAt <= Date.now())) captures.delete(token)
+          }
+
+          res.statusCode = 200
+          res.end(JSON.stringify({
+            noteId,
+            title: field('title'),
+            author: field('author'),
+            body: field('content'),
+            likes: parseMetric(field('likes')),
+            collects: parseMetric(field('collects')),
+            comments: parseMetric(field('comments')),
+            hashtags: parseTags(field('tags')),
+            imageCount: downloadedImages.length,
+            images: downloadedImages.map((image, index) => ({
+              filename: image.filename,
+              mimeType: image.mimeType,
+              byteSize: image.byteSize,
+              position: index + 1,
+              downloadUrl: `/api/opencli/xhs-media/${captureToken}/${encodeURIComponent(image.filename)}`,
+            })),
+          }))
+        } catch (caught) {
+          const message = caught instanceof Error ? caught.message : 'OpenCLI 笔记采集失败'
+          res.statusCode = 500
+          res.end(JSON.stringify({ error: message }))
+        }
+      })
+
+      server.middlewares.use('/api/opencli/xhs-media', async (req, res) => {
+        if (req.method !== 'GET' || !isLocalBridgeRequest(req)) {
+          res.statusCode = req.method === 'GET' ? 403 : 405
+          res.end()
+          return
+        }
+        const parts = (req.url ?? '').split('?')[0].split('/').filter(Boolean)
+        const [captureToken, filename] = parts
+        const file = captureToken && filename ? captures.get(captureToken)?.get(decodeURIComponent(filename)) : undefined
+        if (!file || file.expiresAt <= Date.now()) {
+          res.statusCode = 404
+          res.end()
+          return
+        }
+        try {
+          const bytes = await readFile(file.path)
+          res.setHeader('Content-Type', file.mimeType)
+          res.setHeader('Content-Length', bytes.byteLength)
+          res.setHeader('Cache-Control', 'no-store')
+          res.statusCode = 200
+          res.end(bytes)
+        } catch {
+          res.statusCode = 404
+          res.end()
         }
       })
     },

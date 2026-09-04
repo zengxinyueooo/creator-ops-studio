@@ -5,6 +5,10 @@ import { useAuth } from '../auth/AuthContext'
 import { demoState } from '../data/demo'
 import { dataMode } from '../lib/supabase'
 import {
+  captureXiaohongshuNote,
+  downloadCapturedImage,
+} from '../lib/opencliBridge'
+import {
   createCloudComic,
   createCloudTopic,
   createCloudTopicFromReferences,
@@ -18,6 +22,8 @@ import {
   markCloudTopicPublished,
   updateCloudAssetReview,
   updateCloudComicStatus,
+  markCloudReferenceDetailFailed,
+  updateCloudReferenceDetail,
   updateCloudReferenceReview,
   updateCloudTopicBrief,
   updateCloudTopicStatus,
@@ -42,8 +48,9 @@ interface WorkspaceContextValue {
   addResearchTask: (input: { comicId: string; keywords: string[]; purpose: string; limit: number }) => Promise<void>
   importResearchResults: (taskId: string, results: XhsResearchResult[]) => Promise<void>
   updateReferenceReview: (referenceId: string, status: ReferenceItem['reviewStatus']) => Promise<void>
+  captureReferenceAssets: (referenceId: string) => Promise<{ imageCount: number }>
   createTopicFromReferences: (input: Pick<Topic, 'title' | 'subtitle' | 'pillar' | 'comicId'>, referenceIds: string[]) => Promise<void>
-  uploadAssets: (files: File[], metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; comicId?: string; topicId?: string; sourceReferenceId?: string; visualFormat?: AssetVisualFormat; contentType?: AssetContentType; characters?: string[] }) => Promise<void>
+  uploadAssets: (files: File[], metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; comicId?: string; topicId?: string; sourceReferenceId?: string; sourceNoteId?: string; sourceNoteTags?: string[]; visualFormat?: AssetVisualFormat; contentType?: AssetContentType; characters?: string[] }) => Promise<void>
   reviewAsset: (assetId: string, visualFormat: AssetVisualFormat, reviewStatus: AssetReviewStatus) => Promise<void>
   toggleTopicAsset: (topicId: string, assetId: string) => Promise<void>
   markTopicPublished: (topicId: string) => Promise<void>
@@ -383,6 +390,106 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           throw caught
         }
       }
+    },
+    captureReferenceAssets: async (referenceId) => {
+      const reference = state.references.find((item) => item.id === referenceId)
+      if (!reference) throw new Error('参考笔记不存在，请刷新后重试')
+      if (reference.reviewStatus !== 'kept') throw new Error('请先将这篇笔记标记为“保留”，再采集详情与素材')
+      if (!reference.comicId) throw new Error('这篇笔记未关联漫画，无法写入素材库')
+      const comic = state.comics.find((item) => item.id === reference.comicId)
+      if (!comic) throw new Error('关联漫画不存在，请刷新后重试')
+
+      let capture
+      try {
+        capture = await captureXiaohongshuNote(reference.sourceUrl)
+      } catch (caught) {
+        const message = caught instanceof Error ? caught.message : '小红书笔记采集失败'
+        if (dataMode === 'supabase') await markCloudReferenceDetailFailed(referenceId, message)
+        setState((current) => ({
+          ...current,
+          references: current.references.map((item) => item.id === referenceId ? { ...item, detailStatus: 'failed', detailError: message } : item),
+        }))
+        throw caught
+      }
+
+      const detail = {
+        noteId: capture.noteId,
+        title: capture.title || reference.title,
+        author: capture.author || reference.author,
+        body: capture.body,
+        likes: capture.likes,
+        collects: capture.collects,
+        comments: capture.comments,
+        hashtags: capture.hashtags,
+        imageCount: capture.imageCount,
+      }
+      if (dataMode === 'supabase' && user) {
+        await updateCloudReferenceDetail(referenceId, detail)
+      } else {
+        setState((current) => ({
+          ...current,
+          references: current.references.map((item) => item.id === referenceId ? {
+            ...item,
+            ...detail,
+            detailStatus: 'detailed',
+            detailError: '',
+            detailCapturedAt: '刚刚',
+          } : item),
+        }))
+      }
+
+      const files = await Promise.all(capture.images.map((image) => downloadCapturedImage(image)))
+      const assetMetadata = {
+        sourceUrl: reference.sourceUrl,
+        sourceType: 'xiaohongshu',
+        sourceReferenceId: referenceId,
+        sourceNoteId: capture.noteId,
+        sourceNoteTags: capture.hashtags,
+        workName: comic.title,
+        chapter: capture.title || '来源笔记片段',
+        copyrightStatus: 'reference_only' as const,
+        tags: [],
+        comicId: reference.comicId,
+        visualFormat: 'uncertain' as const,
+        contentType: 'other' as const,
+        characters: [],
+      }
+      if (dataMode === 'supabase' && user) {
+        await uploadCloudAssets(user.id, state.activeAccountId, files, assetMetadata)
+        await reload()
+      } else {
+        setState((current) => ({
+          ...current,
+          assets: [...files.map((file, fileIndex): AssetItem => ({
+            id: crypto.randomUUID(),
+            accountId: current.activeAccountId,
+            comicId: reference.comicId,
+            storagePath: '',
+            originalName: file.name,
+            mimeType: file.type,
+            byteSize: file.size,
+            sourceUrl: reference.sourceUrl,
+            sourceReferenceId: referenceId,
+            sourcePosition: fileIndex + 1,
+            sourceType: 'xiaohongshu',
+            tags: [],
+            workName: comic.title,
+            chapter: capture.title || '来源笔记片段',
+            copyrightStatus: 'reference_only',
+            createdAt: '刚刚',
+            previewUrl: URL.createObjectURL(file),
+            topicIds: [],
+            visualFormat: 'uncertain',
+            classificationNote: `第 ${fileIndex + 1} 张 · 自动采集，待确认是否为单张连续画面`,
+            reviewStatus: 'pending',
+            contentType: 'other',
+            characters: [],
+            usageCount: 0,
+            coverUsageCount: 0,
+          })), ...current.assets],
+        }))
+      }
+      return { imageCount: files.length }
     },
     createTopicFromReferences: async (input, referenceIds) => {
       if (!referenceIds.length) throw new Error('请至少选择一条参考笔记')

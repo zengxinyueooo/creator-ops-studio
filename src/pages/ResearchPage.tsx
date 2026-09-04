@@ -1,4 +1,4 @@
-import { BookOpenCheck, Check, Clipboard, ExternalLink, Import, Layers3, LoaderCircle, Play, Plus, Search, ShieldCheck, TerminalSquare, X } from 'lucide-react'
+import { BookOpenCheck, Check, Clipboard, ExternalLink, ImageDown, Import, Layers3, LoaderCircle, Play, Plus, Search, ShieldCheck, TerminalSquare, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { searchXiaohongshuBatch } from '../lib/opencliBridge'
 import { useWorkspace } from '../store/WorkspaceContext'
@@ -13,7 +13,7 @@ const reviewLabels: Record<ReferenceItem['reviewStatus'], { label: string; tone:
 }
 
 export function ResearchPage() {
-  const { activeAccount, state, addResearchTask, importResearchResults, updateReferenceReview, createTopicFromReferences } = useWorkspace()
+  const { activeAccount, state, addResearchTask, importResearchResults, updateReferenceReview, captureReferenceAssets, createTopicFromReferences } = useWorkspace()
   const comics = state.comics.filter((comic) => comic.accountId === activeAccount.id && comic.status !== 'archived')
   const validComicIds = new Set(comics.map((comic) => comic.id))
   const references = state.references.filter((reference) => reference.accountId === activeAccount.id && reference.comicId && validComicIds.has(reference.comicId))
@@ -30,6 +30,7 @@ export function ResearchPage() {
   const [referenceQuery, setReferenceQuery] = useState('')
   const [selectedReferenceIds, setSelectedReferenceIds] = useState<string[]>([])
   const [reviewingReferenceId, setReviewingReferenceId] = useState<string | null>(null)
+  const [capturingReferenceId, setCapturingReferenceId] = useState<string | null>(null)
   const [topicTitle, setTopicTitle] = useState('')
   const [topicSubtitle, setTopicSubtitle] = useState('')
   const [topicPillar, setTopicPillar] = useState(activeAccount.pillars[0] ?? '高能片段')
@@ -155,6 +156,20 @@ export function ResearchPage() {
     }
   }
 
+  async function captureReference(reference: ReferenceItem) {
+    setCapturingReferenceId(reference.id)
+    setError('')
+    setMessage('')
+    try {
+      const result = await captureReferenceAssets(reference.id)
+      setMessage(`已采集《${reference.title}》的正文、话题与 ${result.imageCount} 张图片；素材已进入素材筛选台，等待图片结构审核。`)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '笔记详情与素材采集失败')
+    } finally {
+      setCapturingReferenceId(null)
+    }
+  }
+
   async function createTopic(event: FormEvent) {
     event.preventDefault()
     if (!selectedReferences.length || !selectionComicId) {
@@ -214,7 +229,7 @@ export function ResearchPage() {
       </section>
 
       <section className="panel reference-library">
-        <div className="panel-heading"><div><h2>参考笔记候选库</h2><p>导入不等于采用；先保留或排除，再把同一部漫画的参考笔记合并为一个选题。</p></div><span className="count-chip">{references.length} 条笔记</span></div>
+        <div className="panel-heading"><div><h2>参考笔记候选库</h2><p>导入不等于采用；保留后可采集完整正文与素材，再把同一部漫画的参考笔记合并为一个选题。</p></div><span className="count-chip">{references.length} 条笔记</span></div>
         <div className="reference-toolbar"><label className="reference-search"><Search size={15} /><input value={referenceQuery} onChange={(event) => setReferenceQuery(event.target.value)} placeholder="搜索标题、作者或漫画" /></label><div className="reference-filter-tabs">{(['all', 'candidate', 'kept', 'rejected'] as ReferenceFilter[]).map((filter) => <button type="button" className={referenceFilter === filter ? 'active' : ''} onClick={() => setReferenceFilter(filter)} key={filter}>{filter === 'all' ? '全部' : reviewLabels[filter].label}</button>)}</div></div>
 
         {visibleReferences.length ? <div className="reference-list">{visibleReferences.map((reference) => {
@@ -224,8 +239,8 @@ export function ResearchPage() {
           const wrongComic = Boolean(selectionComicId && reference.comicId !== selectionComicId)
           return <article className={`reference-card ${isSelected ? 'selected' : ''}`} key={reference.id}>
             <label className="reference-select"><input type="checkbox" checked={isSelected} disabled={wrongComic} onChange={() => toggleReference(reference)} /><span /></label>
-            <div className="reference-main"><div className="reference-card-top"><span className={`status-badge ${review.tone}`}>{review.label}</span>{comic && <span className="research-comic-label">《{comic.title}》</span>}{reference.topicIds.length > 0 && <span className="linked-topic-chip"><Layers3 size={12} />已关联 {reference.topicIds.length} 个选题</span>}</div><h3>{reference.title}</h3><p>{reference.body || '当前仅保存了列表信息；后续采集详情后会在这里显示正文摘要。'}</p><small>{reference.author} · {reference.likes.toLocaleString()} 赞{reference.publishedAt ? ` · ${reference.publishedAt}` : ''} · {reference.detailStatus === 'detailed' ? `${reference.imageCount} 张图` : '待采集详情'}</small></div>
-            <div className="reference-actions"><a className="icon-button" aria-label="打开原笔记" href={reference.sourceUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /></a><button className="secondary-button" type="button" disabled={reviewingReferenceId === reference.id} onClick={() => void reviewReference(reference.id, 'rejected')}><X size={14} />排除</button><button className="secondary-button keep-button" type="button" disabled={reviewingReferenceId === reference.id} onClick={() => void reviewReference(reference.id, 'kept')}><Check size={14} />保留</button></div>
+            <div className="reference-main"><div className="reference-card-top"><span className={`status-badge ${review.tone}`}>{review.label}</span>{comic && <span className="research-comic-label">《{comic.title}》</span>}{reference.topicIds.length > 0 && <span className="linked-topic-chip"><Layers3 size={12} />已关联 {reference.topicIds.length} 个选题</span>}</div><h3>{reference.title}</h3><p>{reference.body || (reference.detailStatus === 'failed' ? `上次采集未完成：${reference.detailError}` : '当前仅保存了列表信息；保留后可采集正文、话题和全部图片。')}</p>{reference.hashtags.length > 0 && <div className="reference-tags">{reference.hashtags.slice(0, 6).map((tag) => <span key={tag}>#{tag}</span>)}</div>}<small>{reference.author} · {reference.likes.toLocaleString()} 赞{reference.publishedAt ? ` · ${reference.publishedAt}` : ''} · {reference.detailStatus === 'detailed' ? `详情已采集 · ${reference.imageCount} 张图` : reference.detailStatus === 'failed' ? '采集失败，可人工重试' : '待采集详情'}</small></div>
+            <div className="reference-actions"><a className="icon-button" aria-label="打开原笔记" href={reference.sourceUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /></a>{reference.reviewStatus === 'kept' && <button className="secondary-button capture-button" type="button" disabled={capturingReferenceId === reference.id} onClick={() => void captureReference(reference)}>{capturingReferenceId === reference.id ? <LoaderCircle className="spin" size={14} /> : <ImageDown size={14} />}{capturingReferenceId === reference.id ? '采集中…' : reference.detailStatus === 'detailed' ? '重新采集' : '采集详情与素材'}</button>}<button className="secondary-button" type="button" disabled={reviewingReferenceId === reference.id || capturingReferenceId === reference.id} onClick={() => void reviewReference(reference.id, 'rejected')}><X size={14} />排除</button><button className="secondary-button keep-button" type="button" disabled={reviewingReferenceId === reference.id || capturingReferenceId === reference.id} onClick={() => void reviewReference(reference.id, 'kept')}><Check size={14} />保留</button></div>
           </article>
         })}</div> : <div className="empty-state tall">当前筛选下没有参考笔记。执行调研并导入后会显示在这里。</div>}
 
