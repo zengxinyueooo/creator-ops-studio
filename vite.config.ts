@@ -12,11 +12,7 @@ import { defineConfig } from 'vite'
 const execFileAsync = promisify(execFile)
 const projectRoot = dirname(fileURLToPath(import.meta.url))
 const NOTE_CARD_SELECTOR = 'section.note-item, section:has(a[href*="/search_result/"]), section:has(a[href*="/explore/"])'
-const FILTER_TRIGGER_SELECTOR = '#app .filter'
-const FILTER_OPTION_SELECTOR = '#app .filter-panel .tags'
 
-type BrowserFindEntry = { ref?: number; text?: string; visible?: boolean; attrs?: Record<string, string> }
-type BrowserFindResult = { matches_n?: number; entries?: BrowserFindEntry[]; error?: { message?: string } }
 type RawNote = { title?: unknown; author?: unknown; likes?: unknown; url?: unknown }
 type DownloadedImage = { filename: string; path: string; mimeType: string; byteSize: number }
 type CaptureFile = DownloadedImage & { expiresAt: number }
@@ -107,46 +103,6 @@ function parseJson<T>(value: string, context: string): T {
   }
 }
 
-async function findExactTextRef(session: string, selector: string, label: string, windowMode: 'background' | 'foreground' = 'background') {
-  const payload = parseJson<BrowserFindResult>(await runOpenCli([
-    'browser', session, 'find', '--css', selector, '--limit', '500', '--text-max', '80', '--window', windowMode,
-  ]), `查找“${label}”时`)
-  if (payload.error) throw new Error(payload.error.message || `未找到筛选项“${label}”`)
-  const normalize = (value: unknown) => String(value ?? '').replace(/\s+/g, '').trim()
-  const entry = payload.entries?.find((item) => item.visible !== false && normalize(item.text) === normalize(label))
-  if (entry?.ref == null) throw new Error(`小红书页面中未找到筛选项“${label}”，已停止本次任务`)
-  return String(entry.ref)
-}
-
-async function clickFreshTextTarget(session: string, selector: string, label: string, windowMode: 'background' | 'foreground' = 'background') {
-  const ref = await findExactTextRef(session, selector, label, windowMode)
-  const result = parseJson<{ clicked?: boolean; match_level?: string; error?: { message?: string } }>(await runOpenCli([
-    'browser', session, 'click', ref, '--window', windowMode,
-  ]), `点击“${label}”时`)
-  if (result.error || !result.clicked) throw new Error(result.error?.message || `筛选项“${label}”点击失败`)
-  if (result.match_level === 'reidentified') throw new Error(`筛选项“${label}”在点击前发生变化，已停止本次任务`)
-}
-
-async function readFilterState(session: string) {
-  const raw = await runOpenCli(['browser', session, 'eval', String.raw`(() => ({
-    open: Boolean(document.querySelector('#app .filter-panel .tags')),
-    active: [...document.querySelectorAll('#app .filter-panel .tags.active')]
-      .map((item) => (item.textContent || '').replace(/\s+/g, '').trim())
-  }))()`, '--window', 'foreground'])
-  return parseJson<{ open?: boolean; active?: string[] }>(raw, '检查筛选状态时')
-}
-
-async function ensureFilterOption(session: string, label: string) {
-  const before = await readFilterState(session)
-  if (!before.open) throw new Error('小红书筛选面板未正常打开，已停止本次任务')
-  if (before.active?.includes(label)) return
-  await clickFreshTextTarget(session, FILTER_OPTION_SELECTOR, label, 'foreground')
-  await runOpenCli(['browser', session, 'wait', 'time', '2', '--window', 'foreground'])
-  await inspectPageHealth(session)
-  const after = await readFilterState(session)
-  if (!after.active?.includes(label)) throw new Error(`筛选项“${label}”未生效，已停止本次任务`)
-}
-
 const EXTRACT_VISIBLE_NOTES_JS = String.raw`(() => {
   const clean = (value) => (value || '').replace(/\s+/g, ' ').trim();
   const normalizeUrl = (href) => {
@@ -202,26 +158,16 @@ async function waitForSearchResults(session: string) {
 }
 
 async function searchOneKeyword(session: string, keyword: string, publishedWithin: 'all' | 'week') {
-  const url = `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(keyword)}&source=web_search_result_notes`
+  // XHS currently exposes the image-post tab as a stable URL parameter. This avoids
+  // repeatedly opening the fragile visual filter drawer in an automated browser.
+  const url = `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(keyword)}&type=51`
   await runOpenCli(['browser', session, 'open', url, '--window', 'background'], 75_000)
   await inspectPageHealth(session)
   if (!await waitForSearchResults(session)) return []
 
-  await clickFreshTextTarget(session, '#image', '图文')
-  await runOpenCli(['browser', session, 'wait', 'time', '1', '--window', 'background'])
-  await inspectPageHealth(session)
-  const filterState = await readFilterState(session)
-  if (!filterState.open) {
-    await clickFreshTextTarget(session, FILTER_TRIGGER_SELECTOR, '筛选', 'foreground')
-    await runOpenCli(['browser', session, 'wait', 'selector', FILTER_OPTION_SELECTOR, '--timeout', '15000', '--window', 'foreground'], 25_000)
-  }
-  for (const label of ['最多点赞', ...(publishedWithin === 'week' ? ['一周内'] : []), '未看过']) {
-    await ensureFilterOption(session, label)
-  }
-  if (!await waitForSearchResults(session)) return []
   const notes = parseJson<RawNote[]>(await runOpenCli(['browser', session, 'eval', EXTRACT_VISIBLE_NOTES_JS, '--window', 'background']), '读取搜索结果时')
   if (!Array.isArray(notes)) throw new Error('小红书搜索结果格式异常，已停止本次任务')
-  return notes.map((note) => {
+  const normalized = notes.map((note) => {
     const cleanUrl = sanitizeXhsUrl(note.url)
     return {
       rank: 0,
@@ -234,6 +180,10 @@ async function searchOneKeyword(session: string, keyword: string, publishedWithi
       matchedKeyword: keyword,
     }
   }).filter((note) => note.url)
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+  return normalized
+    .filter((note) => publishedWithin === 'all' || (note.publishedAt !== null && new Date(`${note.publishedAt}T00:00:00+08:00`).getTime() >= sevenDaysAgo))
+    .sort((a, b) => b.likes - a.likes)
 }
 
 async function readJsonBody(req: IncomingMessage) {
