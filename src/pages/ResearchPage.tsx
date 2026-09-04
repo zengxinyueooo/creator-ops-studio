@@ -12,6 +12,13 @@ const reviewLabels: Record<ReferenceItem['reviewStatus'], { label: string; tone:
   rejected: { label: '已排除', tone: 'gray' },
 }
 
+function defaultKeywordSuggestions(title: string, serializationStatus: 'ongoing' | 'completed' | 'unknown' | undefined) {
+  const angles = serializationStatus === 'completed'
+    ? ['名场面', '高甜互动', '经典台词']
+    : ['最新话', '高光片段', '角色互动']
+  return angles.map((angle) => `${title} ${angle}`)
+}
+
 export function ResearchPage() {
   const { activeAccount, state, addResearchTask, saveResearchResults, importResearchResults, updateReferenceReview, captureReferenceAssets, createTopicFromReferences } = useWorkspace()
   const comics = state.comics.filter((comic) => comic.accountId === activeAccount.id && comic.status !== 'archived')
@@ -20,7 +27,9 @@ export function ResearchPage() {
   const [comicId, setComicId] = useState(() => comics.find((comic) => comic.status === 'following' || comic.status === 'selected')?.id ?? comics[0]?.id ?? '')
   const selectedComic = comics.find((comic) => comic.id === comicId)
   const isCompletedComic = selectedComic?.serializationStatus === 'completed'
+  const suggestedKeywords = selectedComic ? defaultKeywordSuggestions(selectedComic.title, selectedComic.serializationStatus) : []
   const [keywordText, setKeywordText] = useState('')
+  const [keywordSelection, setKeywordSelection] = useState<string[] | null>(null)
   const [purpose, setPurpose] = useState('')
   const [creating, setCreating] = useState(false)
   const [runningTaskId, setRunningTaskId] = useState<string | null>(null)
@@ -39,6 +48,7 @@ export function ResearchPage() {
   const [creatingTopic, setCreatingTopic] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const selectedKeywords = keywordSelection ?? suggestedKeywords
   const tasks = state.researchTasks.filter((task) => task.accountId === activeAccount.id && task.comicId && validComicIds.has(task.comicId))
   const selectedReferences = references.filter((reference) => selectedReferenceIds.includes(reference.id))
   const selectionComicId = selectedReferences[0]?.comicId
@@ -68,7 +78,7 @@ export function ResearchPage() {
 
   async function createTask(event: FormEvent) {
     event.preventDefault()
-    const keywords = parseKeywords(keywordText)
+    const keywords = [...new Set([...selectedKeywords, ...parseKeywords(keywordText)])]
     setCreating(true)
     setError('')
     setMessage('')
@@ -83,6 +93,19 @@ export function ResearchPage() {
     } finally {
       setCreating(false)
     }
+  }
+
+  function toggleSuggestedKeyword(keyword: string) {
+    setKeywordSelection((current) => {
+      const active = current ?? suggestedKeywords
+      if (active.includes(keyword)) return active.filter((item) => item !== keyword)
+      if (active.length >= 3) {
+        setError('每个调研批次最多选择 3 个关键词；如需自定义，请先取消一个建议词')
+        return active
+      }
+      setError('')
+      return [...active, keyword]
+    })
   }
 
   async function runTask(taskId: string, taskComicId: string | undefined, taskKeywords: string[], taskLimit: number, publishedWithin: 'all' | 'day' | 'week' | 'half_year') {
@@ -210,10 +233,8 @@ export function ResearchPage() {
       <section className="integration-banner"><div className="integration-logo"><TerminalSquare size={25} /></div><div><h2>OpenCLI 小红书浏览器调研</h2><p>固定读取图文首屏；连载作品按近一周过滤、结果按点赞排序，并排除已导入工作台的笔记。不自动滚动或发布。</p></div><a href="https://github.com/jackwener/OpenCLI" target="_blank" rel="noreferrer">查看项目 <ExternalLink size={14} /></a></section>
 
       <form className="research-create-form" onSubmit={createTask}>
-        <select value={comicId} onChange={(event) => setComicId(event.target.value)} required><option value="">选择所属漫画</option>{comics.map((comic) => <option key={comic.id} value={comic.id}>{comic.title}</option>)}</select>
-        <textarea value={keywordText} onChange={(event) => setKeywordText(event.target.value)} placeholder={isCompletedComic
-          ? `每行一个关键词，且必须完整包含漫画名，例如：\n${selectedComic?.title ?? '漫画名'} 名场面\n${selectedComic?.title ?? '漫画名'} 高甜互动\n${selectedComic?.title ?? '漫画名'} 经典台词`
-          : `每行一个关键词，且必须完整包含漫画名，例如：\n${selectedComic?.title ?? '漫画名'} 最新话\n${selectedComic?.title ?? '漫画名'} 特典`} maxLength={240} required />
+        <select value={comicId} onChange={(event) => { setComicId(event.target.value); setKeywordSelection(null); setKeywordText('') }} required><option value="">选择所属漫画</option>{comics.map((comic) => <option key={comic.id} value={comic.id}>{comic.title}</option>)}</select>
+        <div className="research-keyword-picker"><div className="keyword-picker-heading"><strong>建议关键词</strong><span>已选 {selectedKeywords.length}/3</span></div><div className="keyword-options">{suggestedKeywords.map((keyword) => <label key={keyword}><input type="checkbox" checked={selectedKeywords.includes(keyword)} onChange={() => toggleSuggestedKeyword(keyword)} />{keyword}</label>)}</div><input value={keywordText} onChange={(event) => setKeywordText(event.target.value)} placeholder="可选：补充自定义关键词（先取消一个建议词）" maxLength={80} /></div>
         <input value={purpose} onChange={(event) => setPurpose(event.target.value)} placeholder={isCompletedComic ? '调研目的，例如：寻找高赞名场面的选题角度' : '调研目的，例如：寻找最新话的高赞选题角度'} maxLength={160} />
         <div className="research-fixed-limit"><strong>10 条</strong><span>{isCompletedComic ? '不限时间 · 去重上限' : '一周内 · 去重上限'}</span></div>
         <button className="primary-button" type="submit" disabled={creating}><Plus size={15} />{creating ? '创建中…' : '创建任务'}</button>
