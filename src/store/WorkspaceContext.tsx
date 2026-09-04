@@ -43,7 +43,7 @@ interface WorkspaceContextValue {
   importResearchResults: (taskId: string, results: XhsResearchResult[]) => Promise<void>
   updateReferenceReview: (referenceId: string, status: ReferenceItem['reviewStatus']) => Promise<void>
   createTopicFromReferences: (input: Pick<Topic, 'title' | 'subtitle' | 'pillar' | 'comicId'>, referenceIds: string[]) => Promise<void>
-  uploadAssets: (files: File[], metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; comicId?: string; topicId?: string; visualFormat?: AssetVisualFormat; contentType?: AssetContentType; characters?: string[] }) => Promise<void>
+  uploadAssets: (files: File[], metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; comicId?: string; topicId?: string; sourceReferenceId?: string; visualFormat?: AssetVisualFormat; contentType?: AssetContentType; characters?: string[] }) => Promise<void>
   reviewAsset: (assetId: string, visualFormat: AssetVisualFormat, reviewStatus: AssetReviewStatus) => Promise<void>
   toggleTopicAsset: (topicId: string, assetId: string) => Promise<void>
   markTopicPublished: (topicId: string) => Promise<void>
@@ -65,8 +65,11 @@ function loadLocalState(): WorkspaceState {
       topics: parsed.topics ?? [],
       references: (parsed.references ?? []).map((reference) => ({
         ...reference,
+        topicIds: reference.topicIds ?? (reference.topicId ? [reference.topicId] : []),
+        hashtags: reference.hashtags ?? [],
         body: reference.body ?? '',
         imageCount: reference.imageCount ?? 0,
+        detailError: reference.detailError ?? '',
         detailStatus: reference.detailStatus ?? 'list_only',
         reviewStatus: reference.reviewStatus ?? 'candidate',
       })),
@@ -206,7 +209,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (!topic) throw new Error('选题不存在')
       const comic = state.comics.find((item) => item.id === topic.comicId)
       const references = state.references
-        .filter((reference) => reference.topicId === topicId && reference.reviewStatus === 'kept')
+        .filter((reference) => reference.topicIds.includes(topicId) && reference.reviewStatus === 'kept')
         .sort((left, right) => right.likes - left.likes)
       const strongestReference = references[0]
       const emotion = topic.tags.slice(0, 3).join('、') || '情绪反差、角色关系'
@@ -350,9 +353,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           capturedAt: '刚刚',
           insight: '',
           noteId: result.noteId || undefined,
+          topicIds: [],
+          researchTaskId: taskId,
+          matchedKeyword: result.matchedKeyword,
+          discoveryRank: result.rank,
           body: '',
           publishedAt: result.publishedAt || undefined,
           imageCount: 0,
+          hashtags: [],
+          detailError: '',
           detailStatus: 'list_only' as const,
           reviewStatus: 'candidate' as const,
         })), ...current.references],
@@ -404,7 +413,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           assetCount: 0,
           updatedAt: '刚刚',
         }, ...current.topics],
-        references: current.references.map((reference) => referenceIds.includes(reference.id) ? { ...reference, topicId, reviewStatus: 'kept' } : reference),
+        references: current.references.map((reference) => referenceIds.includes(reference.id) ? { ...reference, topicId: reference.topicId ?? topicId, topicIds: [...new Set([...reference.topicIds, topicId])], reviewStatus: 'kept' } : reference),
       }))
     },
     uploadAssets: async (files, metadata) => {
@@ -415,7 +424,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
       setState((current) => ({
         ...current,
-        assets: [...files.map((file): AssetItem => ({
+        assets: [...files.map((file, fileIndex): AssetItem => ({
           id: crypto.randomUUID(),
           accountId: current.activeAccountId,
           comicId: metadata.comicId,
@@ -424,6 +433,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           mimeType: file.type,
           byteSize: file.size,
           sourceUrl: metadata.sourceUrl || undefined,
+          sourceReferenceId: metadata.sourceReferenceId,
+          sourcePosition: metadata.sourceReferenceId ? fileIndex + 1 : undefined,
           sourceType: metadata.sourceType,
           tags: metadata.tags,
           workName: metadata.workName,

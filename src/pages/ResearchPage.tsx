@@ -133,7 +133,6 @@ export function ResearchPage() {
   }
 
   function toggleReference(reference: ReferenceItem) {
-    if (reference.topicId) return
     if (selectionComicId && reference.comicId !== selectionComicId) {
       setError('一次只能选择同一部漫画的参考笔记')
       return
@@ -224,9 +223,9 @@ export function ResearchPage() {
           const isSelected = selectedReferenceIds.includes(reference.id)
           const wrongComic = Boolean(selectionComicId && reference.comicId !== selectionComicId)
           return <article className={`reference-card ${isSelected ? 'selected' : ''}`} key={reference.id}>
-            <label className="reference-select"><input type="checkbox" checked={isSelected} disabled={Boolean(reference.topicId) || wrongComic} onChange={() => toggleReference(reference)} /><span /></label>
-            <div className="reference-main"><div className="reference-card-top"><span className={`status-badge ${review.tone}`}>{review.label}</span>{comic && <span className="research-comic-label">《{comic.title}》</span>}{reference.topicId && <span className="linked-topic-chip"><Layers3 size={12} />已进入选题</span>}</div><h3>{reference.title}</h3><p>{reference.body || '当前仅保存了列表信息；后续采集详情后会在这里显示正文摘要。'}</p><small>{reference.author} · {reference.likes.toLocaleString()} 赞{reference.publishedAt ? ` · ${reference.publishedAt}` : ''} · {reference.detailStatus === 'detailed' ? `${reference.imageCount} 张图` : '待采集详情'}</small></div>
-            <div className="reference-actions"><a className="icon-button" aria-label="打开原笔记" href={reference.sourceUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /></a><button className="secondary-button" type="button" disabled={reviewingReferenceId === reference.id || Boolean(reference.topicId)} onClick={() => void reviewReference(reference.id, 'rejected')}><X size={14} />排除</button><button className="secondary-button keep-button" type="button" disabled={reviewingReferenceId === reference.id || Boolean(reference.topicId)} onClick={() => void reviewReference(reference.id, 'kept')}><Check size={14} />保留</button></div>
+            <label className="reference-select"><input type="checkbox" checked={isSelected} disabled={wrongComic} onChange={() => toggleReference(reference)} /><span /></label>
+            <div className="reference-main"><div className="reference-card-top"><span className={`status-badge ${review.tone}`}>{review.label}</span>{comic && <span className="research-comic-label">《{comic.title}》</span>}{reference.topicIds.length > 0 && <span className="linked-topic-chip"><Layers3 size={12} />已关联 {reference.topicIds.length} 个选题</span>}</div><h3>{reference.title}</h3><p>{reference.body || '当前仅保存了列表信息；后续采集详情后会在这里显示正文摘要。'}</p><small>{reference.author} · {reference.likes.toLocaleString()} 赞{reference.publishedAt ? ` · ${reference.publishedAt}` : ''} · {reference.detailStatus === 'detailed' ? `${reference.imageCount} 张图` : '待采集详情'}</small></div>
+            <div className="reference-actions"><a className="icon-button" aria-label="打开原笔记" href={reference.sourceUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /></a><button className="secondary-button" type="button" disabled={reviewingReferenceId === reference.id} onClick={() => void reviewReference(reference.id, 'rejected')}><X size={14} />排除</button><button className="secondary-button keep-button" type="button" disabled={reviewingReferenceId === reference.id} onClick={() => void reviewReference(reference.id, 'kept')}><Check size={14} />保留</button></div>
           </article>
         })}</div> : <div className="empty-state tall">当前筛选下没有参考笔记。执行调研并导入后会显示在这里。</div>}
 

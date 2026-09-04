@@ -79,6 +79,10 @@ export interface ReferenceItem {
   accountId: string
   comicId?: string
   topicId?: string
+  topicIds: string[]
+  researchTaskId?: string
+  matchedKeyword?: string
+  discoveryRank?: number
   title: string
   author: string
   sourceUrl: string
@@ -92,6 +96,10 @@ export interface ReferenceItem {
   publishedAt?: string
   imageCount: number
   coverUrl?: string
+  hashtags: string[]
+  reviewedAt?: string
+  detailCapturedAt?: string
+  detailError: string
   detailStatus: 'list_only' | 'detailed' | 'failed'
   reviewStatus: 'candidate' | 'kept' | 'rejected'
 }
@@ -139,6 +147,8 @@ export interface AssetItem {
   mimeType: string
   byteSize: number
   sourceUrl?: string
+  sourceReferenceId?: string
+  sourcePosition?: number
   sourceType: string
   tags: string[]
   workName: string

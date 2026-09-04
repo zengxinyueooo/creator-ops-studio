@@ -14,20 +14,21 @@ function formatTime(value?: string | null) {
 
 export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState> {
   const db = client()
-  const [accountsResult, comicsResult, topicsResult, referencesResult, tasksResult, schedulesResult, topicAssetsResult, assetsResult, assetUsagesResult] = await Promise.all([
+  const [accountsResult, comicsResult, topicsResult, referencesResult, tasksResult, schedulesResult, topicReferencesResult, topicAssetsResult, assetsResult, assetUsagesResult] = await Promise.all([
     db.from('accounts').select('*').eq('user_id', userId).is('archived_at', null).order('created_at'),
     db.from('comics').select('*').eq('user_id', userId).is('archived_at', null).order('created_at', { ascending: false }),
     db.from('topics').select('*').eq('user_id', userId).is('archived_at', null).order('created_at', { ascending: false }),
     db.from('references').select('*').eq('user_id', userId).order('captured_at', { ascending: false }),
     db.from('research_tasks').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
     db.from('schedules').select('*').eq('user_id', userId).order('created_at'),
+    db.from('topic_references').select('topic_id, reference_id, position, is_primary'),
     db.from('topic_assets').select('topic_id, asset_id'),
     db.from('assets').select('*').eq('user_id', userId).is('archived_at', null).order('created_at', { ascending: false }),
     db.from('asset_usages').select('*').eq('user_id', userId).order('used_at', { ascending: false }),
   ])
 
   const usageTableMissing = assetUsagesResult.error?.code === '42P01' || assetUsagesResult.error?.code === 'PGRST205'
-  const failed = [accountsResult, comicsResult, topicsResult, referencesResult, tasksResult, schedulesResult, topicAssetsResult, assetsResult, usageTableMissing ? null : assetUsagesResult].find((result) => result?.error)
+  const failed = [accountsResult, comicsResult, topicsResult, referencesResult, tasksResult, schedulesResult, topicReferencesResult, topicAssetsResult, assetsResult, usageTableMissing ? null : assetUsagesResult].find((result) => result?.error)
   if (failed?.error) throw failed.error
 
   const assetRows = assetsResult.data ?? []
@@ -49,11 +50,24 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
     pillars: Array.isArray(row.pillars) ? row.pillars.map(String) : [],
   }))
 
-  const references = (referencesResult.data ?? []).map((row) => ({
+  const topicIdsByReference = new Map<string, string[]>()
+  const referenceCounts = new Map<string, number>()
+  for (const row of topicReferencesResult.data ?? []) {
+    topicIdsByReference.set(row.reference_id, [...(topicIdsByReference.get(row.reference_id) ?? []), row.topic_id])
+    referenceCounts.set(row.topic_id, (referenceCounts.get(row.topic_id) ?? 0) + 1)
+  }
+
+  const references = (referencesResult.data ?? []).map((row) => {
+    const topicIds = [...new Set([...(topicIdsByReference.get(row.id) ?? []), ...(row.topic_id ? [row.topic_id] : [])])]
+    return {
     id: row.id,
     accountId: row.account_id,
     comicId: row.comic_id ?? undefined,
-    topicId: row.topic_id ?? undefined,
+    topicId: topicIds[0],
+    topicIds,
+    researchTaskId: row.research_task_id ?? undefined,
+    matchedKeyword: row.matched_keyword ?? undefined,
+    discoveryRank: row.discovery_rank ?? undefined,
     title: row.title,
     author: row.author_name ?? '未知作者',
     sourceUrl: row.source_url,
@@ -67,14 +81,14 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
     publishedAt: row.published_at ? formatTime(row.published_at) : undefined,
     imageCount: row.image_count ?? 0,
     coverUrl: row.cover_url ?? undefined,
+    hashtags: Array.isArray(row.hashtags) ? row.hashtags.map(String) : [],
+    reviewedAt: row.reviewed_at ? formatTime(row.reviewed_at) : undefined,
+    detailCapturedAt: row.detail_captured_at ? formatTime(row.detail_captured_at) : undefined,
+    detailError: row.detail_error ?? '',
     detailStatus: ['list_only', 'detailed', 'failed'].includes(row.detail_status) ? row.detail_status : 'list_only',
     reviewStatus: ['candidate', 'kept', 'rejected'].includes(row.review_status) ? row.review_status : 'candidate',
-  }))
-
-  const referenceCounts = new Map<string, number>()
-  for (const row of referencesResult.data ?? []) {
-    if (row.topic_id) referenceCounts.set(row.topic_id, (referenceCounts.get(row.topic_id) ?? 0) + 1)
-  }
+    }
+  })
   const assetCounts = new Map<string, number>()
   for (const row of topicAssetsResult.data ?? []) {
     assetCounts.set(row.topic_id, (assetCounts.get(row.topic_id) ?? 0) + 1)
@@ -100,6 +114,8 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
       title: row.title,
       platform: row.platform,
       sourceUrl: row.source_url ?? undefined,
+      sourceReferenceId: row.source_reference_id ?? undefined,
+      sourcePosition: row.source_position ?? undefined,
       coverUrl: row.cover_url ?? undefined,
       status: row.status,
       serializationStatus: (['ongoing', 'completed'].includes(row.custom_fields?.serialization_status)
@@ -229,13 +245,22 @@ export async function createCloudTopicFromReferences(
   if (!referenceIds.length) throw new Error('请至少选择一条参考笔记')
   const db = client()
   const topic = await createCloudTopic(userId, accountId, input)
-  const { error } = await db.from('references').update({
+  const { error: linkError } = await db.from('topic_references').insert(referenceIds.map((referenceId, position) => ({
     topic_id: topic.id,
-    review_status: 'kept',
-  }).eq('user_id', userId).eq('account_id', accountId).in('id', referenceIds)
-  if (error) {
+    reference_id: referenceId,
+    position,
+    is_primary: position === 0,
+    link_source: 'workflow',
+  })))
+  if (linkError) {
     await db.from('topics').delete().eq('id', topic.id)
-    throw error
+    throw linkError
+  }
+  const { error: reviewError } = await db.from('references').update({ review_status: 'kept' })
+    .eq('user_id', userId).eq('account_id', accountId).in('id', referenceIds)
+  if (reviewError) {
+    await db.from('topics').delete().eq('id', topic.id)
+    throw reviewError
   }
   return topic
 }
@@ -326,6 +351,7 @@ export async function importCloudResearchResults(userId: string, accountId: stri
       account_id: accountId,
       comic_id: task.comic_id,
       topic_id: task.topic_id,
+      research_task_id: taskId,
       platform: 'xiaohongshu',
       source_url: result.url,
       source_note_id: result.noteId || null,
@@ -333,6 +359,8 @@ export async function importCloudResearchResults(userId: string, accountId: stri
       title: result.title,
       likes: result.likes,
       published_at: result.publishedAt,
+      matched_keyword: result.matchedKeyword ?? null,
+      discovery_rank: result.rank,
       insight: '',
       body_text: '',
       image_count: 0,
@@ -355,13 +383,13 @@ export async function uploadCloudAssets(
   userId: string,
   accountId: string,
   files: File[],
-  metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; comicId?: string; topicId?: string; visualFormat?: AssetVisualFormat; contentType?: AssetContentType; characters?: string[] },
+  metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; comicId?: string; topicId?: string; sourceReferenceId?: string; visualFormat?: AssetVisualFormat; contentType?: AssetContentType; characters?: string[] },
 ) {
   const db = client()
   const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
   if (!files.length || files.length > 10) throw new Error('每次请选择 1–10 张图片')
 
-  for (const file of files) {
+  for (const [fileIndex, file] of files.entries()) {
     if (!allowedTypes.has(file.type)) throw new Error(`${file.name} 不是支持的图片格式`)
     if (file.size > 15 * 1024 * 1024) throw new Error(`${file.name} 超过 15MB`)
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(-100) || 'image'
@@ -373,6 +401,8 @@ export async function uploadCloudAssets(
       user_id: userId,
       account_id: accountId,
       comic_id: metadata.comicId || null,
+      source_reference_id: metadata.sourceReferenceId || null,
+      source_position: metadata.sourceReferenceId ? fileIndex + 1 : null,
       storage_path: storagePath,
       original_name: file.name,
       mime_type: file.type,
