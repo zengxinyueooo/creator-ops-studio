@@ -7,6 +7,7 @@ import { dataMode } from '../lib/supabase'
 import {
   createCloudComic,
   createCloudTopic,
+  createCloudTopicFromReferences,
   createCloudResearchTask,
   importCloudResearchResults,
   loadCloudWorkspace,
@@ -17,10 +18,11 @@ import {
   markCloudTopicPublished,
   updateCloudAssetReview,
   updateCloudComicStatus,
+  updateCloudReferenceReview,
   updateCloudTopicBrief,
   updateCloudTopicStatus,
 } from '../lib/workspaceRepository'
-import type { AssetContentType, AssetItem, AssetReviewStatus, AssetVisualFormat, Comic, ComicStatus, ContentBrief, CopyrightStatus, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
+import type { AssetContentType, AssetItem, AssetReviewStatus, AssetVisualFormat, Comic, ComicStatus, ContentBrief, CopyrightStatus, ReferenceItem, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
 
 const STORAGE_KEY = 'creator-ops-studio:workspace:v1'
 const EMPTY_STATE: WorkspaceState = { accounts: [], activeAccountId: '', comics: [], topics: [], references: [], researchTasks: [], schedules: [], assets: [] }
@@ -39,6 +41,8 @@ interface WorkspaceContextValue {
   markResearchImported: (taskId: string) => void
   addResearchTask: (input: { comicId: string; keywords: string[]; purpose: string; limit: number }) => Promise<void>
   importResearchResults: (taskId: string, results: XhsResearchResult[]) => Promise<void>
+  updateReferenceReview: (referenceId: string, status: ReferenceItem['reviewStatus']) => Promise<void>
+  createTopicFromReferences: (input: Pick<Topic, 'title' | 'subtitle' | 'pillar' | 'comicId'>, referenceIds: string[]) => Promise<void>
   uploadAssets: (files: File[], metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; comicId?: string; topicId?: string; visualFormat?: AssetVisualFormat; contentType?: AssetContentType; characters?: string[] }) => Promise<void>
   reviewAsset: (assetId: string, visualFormat: AssetVisualFormat, reviewStatus: AssetReviewStatus) => Promise<void>
   toggleTopicAsset: (topicId: string, assetId: string) => Promise<void>
@@ -201,13 +205,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const topic = state.topics.find((item) => item.id === topicId)
       if (!topic) throw new Error('选题不存在')
       const comic = state.comics.find((item) => item.id === topic.comicId)
+      const references = state.references
+        .filter((reference) => reference.topicId === topicId && reference.reviewStatus === 'kept')
+        .sort((left, right) => right.likes - left.likes)
+      const strongestReference = references[0]
       const emotion = topic.tags.slice(0, 3).join('、') || '情绪反差、角色关系'
       const brief: ContentBrief = {
         status: 'candidate',
-        angle: `围绕${comic ? `《${comic.title}》` : topic.subtitle}的“${topic.title}”展开，用具体画面呈现角色关系和情绪变化。`,
+        angle: references.length
+          ? `综合 ${references.length} 条已保留参考笔记，围绕${comic ? `《${comic.title}》` : topic.subtitle}的“${topic.title}”提炼新的表达角度；重点参考高互动笔记“${strongestReference.title}”传递的关注点，但不复刻原文。`
+          : `围绕${comic ? `《${comic.title}》` : topic.subtitle}的“${topic.title}”展开，用具体画面呈现角色关系和情绪变化。`,
         coreEmotion: emotion,
         hook: `${topic.title}，真正戳人的其实是这一刻的反应。`,
-        structure: ['用最直观的关键画面开场', '补充角色反应或前后反差', '加入个人感受并用问题邀请讨论'],
+        structure: references.length
+          ? ['用能直接兑现标题的关键画面开场', `承接参考笔记共同关注的情绪或关系变化（${references.slice(0, 2).map((reference) => reference.title).join(' / ')}）`, '加入自己的判断，并用具体问题邀请讨论']
+          : ['用最直观的关键画面开场', '补充角色反应或前后反差', '加入个人感受并用问题邀请讨论'],
         assetGuidance: ['能直接对应标题的主画面', '角色表情或动作特写', '关系变化清晰的同框画面'],
         avoidances: ['不照搬来源笔记句式', '不泄露超出当前选题的关键剧情'],
       }
@@ -345,6 +357,54 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           reviewStatus: 'candidate' as const,
         })), ...current.references],
         researchTasks: current.researchTasks.map((task) => task.id === taskId ? { ...task, status: 'imported' } : task),
+      }))
+    },
+    updateReferenceReview: async (referenceId, status) => {
+      const previous = state
+      setState((current) => ({
+        ...current,
+        references: current.references.map((reference) => reference.id === referenceId ? { ...reference, reviewStatus: status } : reference),
+      }))
+      if (dataMode === 'supabase') {
+        try {
+          await updateCloudReferenceReview(referenceId, status)
+        } catch (caught) {
+          setState(previous)
+          setError(caught instanceof Error ? caught.message : '参考笔记审核结果保存失败')
+          throw caught
+        }
+      }
+    },
+    createTopicFromReferences: async (input, referenceIds) => {
+      if (!referenceIds.length) throw new Error('请至少选择一条参考笔记')
+      const selectedReferences = state.references.filter((reference) => referenceIds.includes(reference.id))
+      if (selectedReferences.length !== referenceIds.length) throw new Error('部分参考笔记已不存在，请刷新后重试')
+      if (selectedReferences.some((reference) => reference.comicId !== input.comicId)) throw new Error('一次只能合并同一部漫画的参考笔记')
+
+      if (dataMode === 'supabase' && user) {
+        await createCloudTopicFromReferences(user.id, state.activeAccountId, input, referenceIds)
+        await reload()
+        return
+      }
+
+      const topicId = crypto.randomUUID()
+      setState((current) => ({
+        ...current,
+        topics: [{
+          id: topicId,
+          accountId: current.activeAccountId,
+          comicId: input.comicId,
+          title: input.title,
+          subtitle: input.subtitle || '由参考笔记沉淀',
+          status: 'idea',
+          score: 60,
+          pillar: input.pillar,
+          tags: [],
+          referenceCount: referenceIds.length,
+          assetCount: 0,
+          updatedAt: '刚刚',
+        }, ...current.topics],
+        references: current.references.map((reference) => referenceIds.includes(reference.id) ? { ...reference, topicId, reviewStatus: 'kept' } : reference),
       }))
     },
     uploadAssets: async (files, metadata) => {

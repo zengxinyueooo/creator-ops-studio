@@ -78,6 +78,7 @@ export interface ReferenceItem {
   id: string
   accountId: string
   comicId?: string
+  topicId?: string
   title: string
   author: string
   sourceUrl: string

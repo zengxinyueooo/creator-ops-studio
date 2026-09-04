@@ -180,7 +180,7 @@ async function readJsonBody(req: IncomingMessage) {
     body += chunk
     if (body.length > 8_192) throw new Error('请求内容过大')
   }
-  return JSON.parse(body) as { keywords?: unknown; limit?: unknown }
+  return JSON.parse(body) as { keywords?: unknown; requiredComicTitle?: unknown; limit?: unknown }
 }
 
 function localOpenCliPlugin() {
@@ -210,6 +210,9 @@ function localOpenCliPlugin() {
             : []
           if (keywords.length < 2 || keywords.length > 3) throw new Error('每个批次需要 2–3 个不重复关键词')
           if (keywords.some((keyword) => keyword.length < 2 || keyword.length > 80)) throw new Error('每个关键词长度需要在 2–80 个字符之间')
+          const requiredComicTitle = String(input.requiredComicTitle ?? '').trim()
+          if (!requiredComicTitle || requiredComicTitle.length > 80) throw new Error('缺少有效的漫画名')
+          if (keywords.some((keyword) => !keyword.includes(requiredComicTitle))) throw new Error(`每个关键词都必须包含漫画名“${requiredComicTitle}”`)
           const limit = Math.min(10, Math.max(1, Number.parseInt(String(input.limit ?? 10), 10) || 10))
 
           const byUrl = new Map<string, Awaited<ReturnType<typeof searchOneKeyword>>[number]>()

@@ -53,6 +53,7 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
     id: row.id,
     accountId: row.account_id,
     comicId: row.comic_id ?? undefined,
+    topicId: row.topic_id ?? undefined,
     title: row.title,
     author: row.author_name ?? '未知作者',
     sourceUrl: row.source_url,
@@ -217,6 +218,31 @@ export async function createCloudTopic(userId: string, accountId: string, input:
   }).select('*').single()
   if (error) throw error
   return data
+}
+
+export async function createCloudTopicFromReferences(
+  userId: string,
+  accountId: string,
+  input: Pick<Topic, 'title' | 'subtitle' | 'pillar' | 'comicId'>,
+  referenceIds: string[],
+) {
+  if (!referenceIds.length) throw new Error('请至少选择一条参考笔记')
+  const db = client()
+  const topic = await createCloudTopic(userId, accountId, input)
+  const { error } = await db.from('references').update({
+    topic_id: topic.id,
+    review_status: 'kept',
+  }).eq('user_id', userId).eq('account_id', accountId).in('id', referenceIds)
+  if (error) {
+    await db.from('topics').delete().eq('id', topic.id)
+    throw error
+  }
+  return topic
+}
+
+export async function updateCloudReferenceReview(referenceId: string, reviewStatus: 'candidate' | 'kept' | 'rejected') {
+  const { error } = await client().from('references').update({ review_status: reviewStatus }).eq('id', referenceId)
+  if (error) throw error
 }
 
 export async function updateCloudTopicStatus(topicId: string, status: TopicStatus) {

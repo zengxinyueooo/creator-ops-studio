@@ -216,11 +216,31 @@
 .research-create-form { grid-template-columns: 150px 1.2fr 1fr 100px auto; }.research-create-form > textarea { min-height: 78px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 9px; outline: 0; resize: vertical; background: #fbfafc; font: inherit; font-size: 10px; line-height: 1.5; }.research-create-form > input, .research-create-form > select { min-height: 78px; }.research-create-form > select { min-width: 0; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; outline: 0; background: #fbfafc; font-size: 10px; }.research-fixed-limit { display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 9px; background: #fbfafc; }.research-fixed-limit strong { font-size: 14px; }.research-fixed-limit span { margin-top: 3px; color: var(--muted); font-size: 8px; }
 .keyword-tags, .research-filter-row { display: flex; flex-wrap: wrap; gap: 5px; }.keyword-tags { margin: 9px 0 7px; }.keyword-tags span { padding: 5px 8px; border-radius: 999px; color: #5d5870; background: #f0edff; font-size: 9px; font-weight: 700; }.research-filter-row { margin: 8px 0; }.research-filter-row span { padding: 4px 7px; border-radius: 6px; color: #3c7958; background: #eaf7f0; font-size: 8px; }
 .research-comic-label { display: inline-flex; margin-left: 7px; color: var(--accent); font-size: 10px; font-weight: 800; }
+.research-success { margin: 0 0 15px; padding: 11px 14px; border-radius: 9px; color: #28704d; background: #eaf7f0; font-size: 11px; }
+.reference-library { margin-bottom: 18px; overflow: hidden; }
+.reference-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 18px; border-bottom: 1px solid var(--line); background: #fcfbfc; }
+.reference-search { min-width: 260px; display: flex; align-items: center; gap: 8px; padding: 0 11px; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); background: white; }
+.reference-search input { width: 100%; min-height: 36px; border: 0; outline: 0; font: inherit; font-size: 10px; background: transparent; }
+.reference-filter-tabs { display: flex; gap: 5px; }
+.reference-filter-tabs button { padding: 7px 11px; border: 0; border-radius: 8px; color: var(--muted); background: #f0eef2; cursor: pointer; font-size: 9px; font-weight: 700; }
+.reference-filter-tabs button.active { color: white; background: var(--accent); }
+.reference-list { padding: 4px 18px 0; }
+.reference-card { display: grid; grid-template-columns: 28px minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 15px 4px; border-bottom: 1px solid var(--line); transition: background .15s ease; }
+.reference-card.selected { margin: 0 -9px; padding-right: 13px; padding-left: 13px; border-radius: 10px; background: #f6f2ff; }
+.reference-select { display: grid; place-items: center; cursor: pointer; }.reference-select input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }.reference-select input:disabled { cursor: not-allowed; opacity: .4; }
+.reference-main { min-width: 0; }.reference-card-top { display: flex; align-items: center; gap: 7px; }.reference-card-top .research-comic-label { margin-left: 0; }.reference-main h3 { margin: 8px 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }.reference-main p { margin: 0 0 6px; color: var(--muted); font-size: 9px; line-height: 1.55; }.reference-main small { color: #99949e; font-size: 9px; }
+.linked-topic-chip { display: inline-flex; align-items: center; gap: 4px; color: #6d5ac4; font-size: 8px; font-weight: 700; }
+.reference-actions { display: flex; align-items: center; gap: 6px; }.reference-actions .secondary-button { min-height: 33px; padding: 0 10px; }.reference-actions .keep-button { color: #28704d; border-color: #cfe8da; background: #f3fbf6; }
+.reference-topic-builder { display: grid; grid-template-columns: minmax(180px,.8fr) minmax(220px,1fr) minmax(190px,.8fr) 120px auto; align-items: center; gap: 9px; margin: 14px 18px 18px; padding: 13px; border: 1px solid #ded6f4; border-radius: 12px; background: linear-gradient(120deg,#f8f5ff,#fff); }
+.topic-builder-heading { display: flex; align-items: center; gap: 9px; color: #6d5ac4; }.topic-builder-heading div { display: flex; flex-direction: column; }.topic-builder-heading strong { color: var(--ink); font-size: 11px; }.topic-builder-heading span { margin-top: 3px; font-size: 8px; }
+.reference-topic-builder input, .reference-topic-builder select { min-width: 0; min-height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; outline: 0; background: white; font: inherit; font-size: 9px; }
 .topic-quick-form { grid-template-columns: 150px 1.2fr 1fr 150px auto; }
 
 @media (max-width: 1180px) {
   .brief-grid { grid-template-columns: 1fr 1fr; }.brief-grid > div:last-child { grid-column: 1 / span 2; border-top: 1px solid var(--line); }.asset-brief-bar { grid-template-columns: minmax(220px,1fr) 90px 90px auto; }.asset-brief-bar > p { grid-column: 1 / span 4; }.research-create-form, .topic-quick-form { grid-template-columns: 1fr 1fr; }
+  .reference-topic-builder { grid-template-columns: 1fr 1fr; }.topic-builder-heading { grid-column: 1 / span 2; }
 }
 @media (max-width: 800px) {
   .brief-grid { grid-template-columns: 1fr; }.brief-grid > div, .brief-grid > div:last-child { grid-column: auto; border-right: 0; border-bottom: 1px solid var(--line); }.brief-actions, .brief-panel-heading { align-items: flex-start; flex-direction: column; }.asset-brief-bar { grid-template-columns: 1fr 1fr; }.asset-brief-bar > div:first-child, .asset-brief-bar > p { grid-column: 1 / span 2; }.research-create-form, .topic-quick-form { grid-template-columns: 1fr; }.research-create-form > input, .research-create-form > select { min-height: 46px; }.copy-asset-strip { grid-template-columns: 1fr 1fr; }
+  .reference-toolbar, .reference-card { align-items: stretch; flex-direction: column; }.reference-toolbar { display: flex; }.reference-search { width: 100%; min-width: 0; }.reference-filter-tabs { overflow-x: auto; }.reference-card { grid-template-columns: 24px 1fr; }.reference-actions { grid-column: 2; flex-wrap: wrap; }.reference-topic-builder { grid-template-columns: 1fr; }.topic-builder-heading { grid-column: auto; }
 }
