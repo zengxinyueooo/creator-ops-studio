@@ -120,7 +120,10 @@ const EXTRACT_VISIBLE_NOTES_JS = String.raw`(() => {
     const rect = card.getBoundingClientRect();
     const style = getComputedStyle(card);
     if (rect.width <= 0 || rect.height <= 0 || rect.bottom <= 0 || rect.top >= viewportHeight || style.display === 'none' || style.visibility === 'hidden') continue;
-    const link = card.querySelector('a.cover.mask, a[href*="/search_result/"], a[href*="/explore/"], a[href*="/note/"]');
+    const links = [...card.querySelectorAll('a[href*="/search_result/"], a[href*="/explore/"], a[href*="/note/"]')];
+    const link = links.find((item) => (item.getAttribute('href') || '').includes('xsec_token='))
+      || links.find((item) => (item.getAttribute('href') || '').includes('/search_result/'))
+      || links[0];
     const url = normalizeUrl(link && link.getAttribute('href'));
     if (!url || seen.has(url)) continue;
     seen.add(url);

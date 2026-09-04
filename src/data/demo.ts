@@ -59,7 +59,7 @@ export const demoState: WorkspaceState = {
     { id: 'ref-2', accountId: 'manga-account', comicId: 'comic-1', topicIds: [], researchTaskId: 'research-1', matchedKeyword: '溯洄春时 特典', discoveryRank: 2, title: '听听好美！！', author: 'Banana.', sourceUrl: 'https://www.xiaohongshu.com/', likes: 123, collects: 0, comments: 0, capturedAt: '昨天 21:40', insight: '适合作为人物状态与画风补充证据。', body: '演示详情：短句表达，以人物视觉亮点为主。', publishedAt: '4 天前', imageCount: 4, hashtags: ['溯洄春时'], detailCapturedAt: '昨天 21:45', detailError: '', detailStatus: 'detailed', reviewStatus: 'candidate' },
   ],
   researchTasks: [
-    { id: 'research-1', accountId: 'manga-account', comicId: 'comic-1', keyword: '溯洄春时', keywords: ['溯洄春时', '溯洄春时 最新话', '溯洄春时 特典'], purpose: '收集一周内高互动图文，去重后保留 10 条进入详情审核', status: 'queued', limit: 10, createdAt: '今天 10:06', filters: { noteType: 'image', publishedWithin: 'week', scope: 'unseen', sort: 'most_liked' } },
+    { id: 'research-1', accountId: 'manga-account', comicId: 'comic-1', keyword: '溯洄春时', keywords: ['溯洄春时', '溯洄春时 最新话', '溯洄春时 特典'], purpose: '收集一周内高互动图文，去重后保留 10 条进入详情审核', status: 'queued', limit: 10, createdAt: '今天 10:06', results: [], filters: { noteType: 'image', publishedWithin: 'week', scope: 'unseen', sort: 'most_liked' } },
   ],
   schedules: [
     { id: 'schedule-1', accountId: 'manga-account', title: '《溯洄春时》固定更新', dateLabel: '周五', kind: 'update' },

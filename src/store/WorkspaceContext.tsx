@@ -16,6 +16,7 @@ import {
   importCloudResearchResults,
   loadCloudWorkspace,
   markCloudResearchImported,
+  saveCloudResearchResults,
   seedCloudWorkspace,
   setCloudTopicAsset,
   uploadCloudAssets,
@@ -46,6 +47,7 @@ interface WorkspaceContextValue {
   addTopic: (input: Pick<Topic, 'title' | 'subtitle' | 'pillar' | 'comicId'>) => void
   markResearchImported: (taskId: string) => void
   addResearchTask: (input: { comicId: string; keywords: string[]; purpose: string; limit: number }) => Promise<void>
+  saveResearchResults: (taskId: string, results: XhsResearchResult[]) => Promise<void>
   importResearchResults: (taskId: string, results: XhsResearchResult[]) => Promise<void>
   updateReferenceReview: (referenceId: string, status: ReferenceItem['reviewStatus']) => Promise<void>
   captureReferenceAssets: (referenceId: string) => Promise<{ imageCount: number }>
@@ -84,6 +86,7 @@ function loadLocalState(): WorkspaceState {
         ...task,
         keywords: task.keywords?.length ? task.keywords : [task.keyword],
         filters: task.filters ?? { noteType: 'image', publishedWithin: 'week', scope: 'unseen', sort: 'most_liked' },
+        results: task.results ?? [],
       })),
       schedules: parsed.schedules ?? [],
       assets: (parsed.assets ?? []).map((asset) => ({
@@ -320,6 +323,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             status: 'queued',
             limit: row.result_limit,
             createdAt: '刚刚',
+            results: [],
             filters: { noteType: 'image', publishedWithin, scope: 'unseen', sort: 'most_liked' },
           }, ...current.researchTasks],
         }))
@@ -337,8 +341,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           status: 'queued',
           limit: input.limit,
           createdAt: '刚刚',
+          results: [],
           filters: { noteType: 'image', publishedWithin, scope: 'unseen', sort: 'most_liked' },
         }, ...current.researchTasks],
+      }))
+    },
+    saveResearchResults: async (taskId, results) => {
+      if (dataMode === 'supabase' && user) await saveCloudResearchResults(taskId, results)
+      setState((current) => ({
+        ...current,
+        researchTasks: current.researchTasks.map((task) => task.id === taskId ? { ...task, results, lastRunAt: '刚刚' } : task),
       }))
     },
     importResearchResults: async (taskId, results) => {

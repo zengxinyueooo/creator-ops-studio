@@ -143,7 +143,24 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
       brief: row.brief && typeof row.brief === 'object' && typeof row.brief.angle === 'string' ? row.brief as ContentBrief : undefined,
     })),
     references,
-    researchTasks: (tasksResult.data ?? []).map((row) => ({
+    researchTasks: (tasksResult.data ?? []).map((row) => {
+      const snapshot = Array.isArray(row.result_snapshot) ? row.result_snapshot as unknown[] : []
+      const results = snapshot
+        .filter((item): item is Record<string, unknown> => {
+          const candidate = item && typeof item === 'object' ? item as Record<string, unknown> : null
+          return Boolean(candidate && typeof candidate.url === 'string' && typeof candidate.title === 'string')
+        })
+        .map((item, index) => ({
+          rank: Number.isFinite(Number(item.rank)) ? Number(item.rank) : index + 1,
+          noteId: typeof item.noteId === 'string' ? item.noteId : '',
+          title: item.title as string,
+          author: typeof item.author === 'string' ? item.author : '未知作者',
+          likes: Number.isFinite(Number(item.likes)) ? Number(item.likes) : 0,
+          publishedAt: typeof item.publishedAt === 'string' ? item.publishedAt : null,
+          url: item.url as string,
+          matchedKeyword: typeof item.matchedKeyword === 'string' ? item.matchedKeyword : undefined,
+        }))
+      return {
       id: row.id,
       accountId: row.account_id,
       comicId: row.comic_id ?? undefined,
@@ -153,13 +170,16 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
       status: ['queued', 'running', 'imported', 'failed'].includes(row.status) ? row.status : 'queued',
       limit: row.result_limit,
       createdAt: formatTime(row.created_at),
+      results,
+      lastRunAt: row.last_run_at ? formatTime(row.last_run_at) : undefined,
       filters: {
         noteType: 'image' as const,
         publishedWithin: (['all', 'day', 'week', 'half_year'].includes(row.filter_config?.publishedWithin) ? row.filter_config.publishedWithin : 'week') as 'all' | 'day' | 'week' | 'half_year',
         scope: 'unseen' as const,
         sort: 'most_liked' as const,
       },
-    })),
+      }
+    }),
     schedules: (schedulesResult.data ?? []).map((row) => ({
       id: row.id,
       accountId: row.account_id,
@@ -351,6 +371,14 @@ export async function markCloudTopicPublished(topicId: string) {
 
 export async function markCloudResearchImported(taskId: string) {
   const { error } = await client().from('research_tasks').update({ status: 'imported', completed_at: new Date().toISOString() }).eq('id', taskId)
+  if (error) throw error
+}
+
+export async function saveCloudResearchResults(taskId: string, results: XhsResearchResult[]) {
+  const { error } = await client().from('research_tasks').update({
+    result_snapshot: results,
+    last_run_at: new Date().toISOString(),
+  }).eq('id', taskId)
   if (error) throw error
 }
 

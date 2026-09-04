@@ -13,7 +13,7 @@ const reviewLabels: Record<ReferenceItem['reviewStatus'], { label: string; tone:
 }
 
 export function ResearchPage() {
-  const { activeAccount, state, addResearchTask, importResearchResults, updateReferenceReview, captureReferenceAssets, createTopicFromReferences } = useWorkspace()
+  const { activeAccount, state, addResearchTask, saveResearchResults, importResearchResults, updateReferenceReview, captureReferenceAssets, createTopicFromReferences } = useWorkspace()
   const comics = state.comics.filter((comic) => comic.accountId === activeAccount.id && comic.status !== 'archived')
   const validComicIds = new Set(comics.map((comic) => comic.id))
   const references = state.references.filter((reference) => reference.accountId === activeAccount.id && reference.comicId && validComicIds.has(reference.comicId))
@@ -94,6 +94,7 @@ export function ResearchPage() {
       const importedNoteIds = new Set(references.map((reference) => reference.noteId).filter(Boolean))
       const results = (await searchXiaohongshuBatch(taskKeywords, comic.title, taskLimit, publishedWithin === 'all' ? 'all' : 'week'))
         .filter((result) => !result.noteId || !importedNoteIds.has(result.noteId))
+      await saveResearchResults(taskId, results)
       setPreviews((current) => ({ ...current, [taskId]: results }))
       setSelected((current) => ({ ...current, [taskId]: results.map((result) => result.url) }))
     } catch (caught) {
@@ -104,7 +105,7 @@ export function ResearchPage() {
   }
 
   async function confirmImport(taskId: string) {
-    const results = previews[taskId] ?? []
+    const results = previews[taskId] ?? tasks.find((task) => task.id === taskId)?.results ?? []
     const selectedUrls = new Set(selected[taskId] ?? [])
     const approved = results.filter((result) => selectedUrls.has(result.url))
     setImportingTaskId(taskId)
@@ -225,11 +226,11 @@ export function ResearchPage() {
         <div className="panel">
           <div className="panel-heading"><div><h2>调研任务</h2><p>运行后先预览，再选择需要写入候选库的笔记</p></div><span className="count-chip">{tasks.filter((task) => task.status === 'queued').length} 个待执行</span></div>
           <div className="task-list">{tasks.length ? tasks.map((task) => {
-            const results = previews[task.id] ?? []
+            const results = previews[task.id] ?? task.results ?? []
             const selectedUrls = new Set(selected[task.id] ?? [])
             const taskComic = comics.find((comic) => comic.id === task.comicId)
             return <article className="research-task research-task-card" key={task.id}>
-              <div className="research-task-summary"><div><span className={`status-badge ${task.status === 'imported' ? 'green' : 'blue'}`}>{task.status === 'imported' ? '已导入' : '待执行'}</span>{taskComic && <span className="research-comic-label">《{taskComic.title}》</span>}<div className="keyword-tags">{task.keywords.map((keyword) => <span key={keyword}>{keyword}</span>)}</div><p>{task.purpose || '未填写调研目的'}</p><div className="research-filter-row"><span>图文</span>{task.filters.publishedWithin !== 'all' && <span>近一周</span>}<span>工作台未导入</span><span>按点赞排序</span></div><small>跨词去重，上限 {task.limit} 条 · {task.createdAt}</small></div><div className="task-actions"><button className="secondary-button" type="button" onClick={() => copyKeywords(task.id, task.keywords)}>{copied === task.id ? <Check size={16} /> : <Clipboard size={16} />}{copied === task.id ? '已复制' : '复制关键词'}</button>{task.status !== 'imported' && <button className="primary-button" type="button" onClick={() => runTask(task.id, task.comicId, task.keywords, task.limit, task.filters.publishedWithin)} disabled={runningTaskId === task.id}>{runningTaskId === task.id ? <LoaderCircle className="spin" size={16} /> : <Play size={16} />}{runningTaskId === task.id ? '筛选查询中…' : results.length ? '重新查询' : '本机执行'}</button>}</div></div>
+              <div className="research-task-summary"><div><span className={`status-badge ${task.status === 'imported' ? 'green' : 'blue'}`}>{task.status === 'imported' ? '已导入' : '待执行'}</span>{taskComic && <span className="research-comic-label">《{taskComic.title}》</span>}<div className="keyword-tags">{task.keywords.map((keyword) => <span key={keyword}>{keyword}</span>)}</div><p>{task.purpose || '未填写调研目的'}</p><div className="research-filter-row"><span>图文</span>{task.filters.publishedWithin !== 'all' && <span>近一周</span>}<span>工作台未导入</span><span>按点赞排序</span></div><small>跨词去重，上限 {task.limit} 条{task.lastRunAt ? ` · 最近查询 ${task.lastRunAt}` : ` · ${task.createdAt}`}</small></div><div className="task-actions"><button className="secondary-button" type="button" onClick={() => copyKeywords(task.id, task.keywords)}>{copied === task.id ? <Check size={16} /> : <Clipboard size={16} />}{copied === task.id ? '已复制' : '复制关键词'}</button>{task.status !== 'imported' && <button className="primary-button" type="button" onClick={() => runTask(task.id, task.comicId, task.keywords, task.limit, task.filters.publishedWithin)} disabled={runningTaskId === task.id}>{runningTaskId === task.id ? <LoaderCircle className="spin" size={16} /> : <Play size={16} />}{runningTaskId === task.id ? '筛选查询中…' : results.length ? '重新查询' : '本机执行'}</button>}</div></div>
               {results.length > 0 && <div className="research-preview"><div className="research-preview-heading"><strong>查询结果</strong><span>已选择 {selectedUrls.size}/{results.length} 条</span></div>{results.map((result) => <div className="research-result" key={result.url}><input aria-label={`选择 ${result.title}`} type="checkbox" checked={selectedUrls.has(result.url)} onChange={() => toggleResult(task.id, result.url)} /><span className="result-rank">{result.rank}</span><span><strong>{result.title}</strong><small>{result.matchedKeyword ? `${result.matchedKeyword} · ` : ''}{result.author} · {result.likes.toLocaleString()} 赞{result.publishedAt ? ` · ${result.publishedAt}` : ''}</small></span><a aria-label={`打开 ${result.title}`} href={result.url} target="_blank" rel="noreferrer"><ExternalLink size={14} /></a></div>)}<button className="primary-button import-confirm" type="button" disabled={importingTaskId === task.id || selectedUrls.size === 0} onClick={() => confirmImport(task.id)}><Import size={15} />{importingTaskId === task.id ? '正在导入…' : `确认导入 ${selectedUrls.size} 条`}</button></div>}
             </article>
           }) : <div className="empty-state tall">当前账号暂无调研任务。</div>}</div>

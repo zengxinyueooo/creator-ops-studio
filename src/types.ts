@@ -114,6 +114,8 @@ export interface ResearchTask {
   status: 'queued' | 'running' | 'imported' | 'failed'
   limit: number
   createdAt: string
+  results: XhsResearchResult[]
+  lastRunAt?: string
   filters: {
     noteType: 'image'
     publishedWithin: 'all' | 'day' | 'week' | 'half_year'
