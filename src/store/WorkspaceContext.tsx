@@ -304,8 +304,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
     },
     addResearchTask: async (input) => {
+      const comic = state.comics.find((item) => item.id === input.comicId)
+      const publishedWithin = comic?.serializationStatus === 'completed' ? 'all' as const : 'week' as const
       if (dataMode === 'supabase' && user) {
-        const row = await createCloudResearchTask(user.id, state.activeAccountId, input)
+        const row = await createCloudResearchTask(user.id, state.activeAccountId, { ...input, publishedWithin })
         setState((current) => ({
           ...current,
           researchTasks: [{
@@ -318,7 +320,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             status: 'queued',
             limit: row.result_limit,
             createdAt: '刚刚',
-            filters: { noteType: 'image', publishedWithin: 'week', scope: 'unseen', sort: 'most_liked' },
+            filters: { noteType: 'image', publishedWithin, scope: 'unseen', sort: 'most_liked' },
           }, ...current.researchTasks],
         }))
         return
@@ -335,7 +337,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           status: 'queued',
           limit: input.limit,
           createdAt: '刚刚',
-          filters: { noteType: 'image', publishedWithin: 'week', scope: 'unseen', sort: 'most_liked' },
+          filters: { noteType: 'image', publishedWithin, scope: 'unseen', sort: 'most_liked' },
         }, ...current.researchTasks],
       }))
     },

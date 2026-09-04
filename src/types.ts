@@ -116,7 +116,7 @@ export interface ResearchTask {
   createdAt: string
   filters: {
     noteType: 'image'
-    publishedWithin: 'day' | 'week' | 'half_year'
+    publishedWithin: 'all' | 'day' | 'week' | 'half_year'
     scope: 'unseen'
     sort: 'most_liked'
   }

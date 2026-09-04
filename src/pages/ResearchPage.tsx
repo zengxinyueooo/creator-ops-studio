@@ -18,6 +18,8 @@ export function ResearchPage() {
   const validComicIds = new Set(comics.map((comic) => comic.id))
   const references = state.references.filter((reference) => reference.accountId === activeAccount.id && reference.comicId && validComicIds.has(reference.comicId))
   const [comicId, setComicId] = useState(() => comics.find((comic) => comic.status === 'following' || comic.status === 'selected')?.id ?? comics[0]?.id ?? '')
+  const selectedComic = comics.find((comic) => comic.id === comicId)
+  const isCompletedComic = selectedComic?.serializationStatus === 'completed'
   const [keywordText, setKeywordText] = useState('')
   const [purpose, setPurpose] = useState('')
   const [creating, setCreating] = useState(false)
@@ -58,6 +60,9 @@ export function ResearchPage() {
     const comic = comics.find((item) => item.id === selectedComicId)
     if (!comic) throw new Error('所选漫画不存在')
     if (keywords.some((keyword) => !keyword.includes(comic.title))) throw new Error(`每个关键词都必须完整包含漫画名“${comic.title}”`)
+    if (comic.serializationStatus === 'completed' && keywords.some((keyword) => /最新话|新话|本周更新|更新日/.test(keyword))) {
+      throw new Error(`《${comic.title}》已完结，请用“名场面、角色互动、经典台词”等关键词调研`)
+    }
     return comic
   }
 
@@ -80,13 +85,13 @@ export function ResearchPage() {
     }
   }
 
-  async function runTask(taskId: string, taskComicId: string | undefined, taskKeywords: string[], taskLimit: number) {
+  async function runTask(taskId: string, taskComicId: string | undefined, taskKeywords: string[], taskLimit: number, publishedWithin: 'all' | 'day' | 'week' | 'half_year') {
     setRunningTaskId(taskId)
     setError('')
     setMessage('')
     try {
       const comic = validateKeywords(taskKeywords, taskComicId ?? '')
-      const results = await searchXiaohongshuBatch(taskKeywords, comic.title, taskLimit)
+      const results = await searchXiaohongshuBatch(taskKeywords, comic.title, taskLimit, publishedWithin === 'all' ? 'all' : 'week')
       setPreviews((current) => ({ ...current, [taskId]: results }))
       setSelected((current) => ({ ...current, [taskId]: results.map((result) => result.url) }))
     } catch (caught) {
@@ -203,9 +208,11 @@ export function ResearchPage() {
 
       <form className="research-create-form" onSubmit={createTask}>
         <select value={comicId} onChange={(event) => setComicId(event.target.value)} required><option value="">选择所属漫画</option>{comics.map((comic) => <option key={comic.id} value={comic.id}>{comic.title}</option>)}</select>
-        <textarea value={keywordText} onChange={(event) => setKeywordText(event.target.value)} placeholder={'每行一个关键词，且必须完整包含漫画名，例如：\n溯洄春时 最新话\n溯洄春时 特典'} maxLength={240} required />
-        <input value={purpose} onChange={(event) => setPurpose(event.target.value)} placeholder="调研目的，例如：寻找最新话的高赞选题角度" maxLength={160} />
-        <div className="research-fixed-limit"><strong>10 条</strong><span>去重后上限</span></div>
+        <textarea value={keywordText} onChange={(event) => setKeywordText(event.target.value)} placeholder={isCompletedComic
+          ? `每行一个关键词，且必须完整包含漫画名，例如：\n${selectedComic?.title ?? '漫画名'} 名场面\n${selectedComic?.title ?? '漫画名'} 高甜互动\n${selectedComic?.title ?? '漫画名'} 经典台词`
+          : `每行一个关键词，且必须完整包含漫画名，例如：\n${selectedComic?.title ?? '漫画名'} 最新话\n${selectedComic?.title ?? '漫画名'} 特典`} maxLength={240} required />
+        <input value={purpose} onChange={(event) => setPurpose(event.target.value)} placeholder={isCompletedComic ? '调研目的，例如：寻找高赞名场面的选题角度' : '调研目的，例如：寻找最新话的高赞选题角度'} maxLength={160} />
+        <div className="research-fixed-limit"><strong>10 条</strong><span>{isCompletedComic ? '不限时间 · 去重上限' : '一周内 · 去重上限'}</span></div>
         <button className="primary-button" type="submit" disabled={creating}><Plus size={15} />{creating ? '创建中…' : '创建任务'}</button>
       </form>
 
@@ -220,7 +227,7 @@ export function ResearchPage() {
             const selectedUrls = new Set(selected[task.id] ?? [])
             const taskComic = comics.find((comic) => comic.id === task.comicId)
             return <article className="research-task research-task-card" key={task.id}>
-              <div className="research-task-summary"><div><span className={`status-badge ${task.status === 'imported' ? 'green' : 'blue'}`}>{task.status === 'imported' ? '已导入' : '待执行'}</span>{taskComic && <span className="research-comic-label">《{taskComic.title}》</span>}<div className="keyword-tags">{task.keywords.map((keyword) => <span key={keyword}>{keyword}</span>)}</div><p>{task.purpose || '未填写调研目的'}</p><div className="research-filter-row"><span>图文</span><span>一周内</span><span>未看过</span><span>最多点赞</span></div><small>跨词去重，上限 {task.limit} 条 · {task.createdAt}</small></div><div className="task-actions"><button className="secondary-button" type="button" onClick={() => copyKeywords(task.id, task.keywords)}>{copied === task.id ? <Check size={16} /> : <Clipboard size={16} />}{copied === task.id ? '已复制' : '复制关键词'}</button>{task.status !== 'imported' && <button className="primary-button" type="button" onClick={() => runTask(task.id, task.comicId, task.keywords, task.limit)} disabled={runningTaskId === task.id}>{runningTaskId === task.id ? <LoaderCircle className="spin" size={16} /> : <Play size={16} />}{runningTaskId === task.id ? '筛选查询中…' : results.length ? '重新查询' : '本机执行'}</button>}</div></div>
+              <div className="research-task-summary"><div><span className={`status-badge ${task.status === 'imported' ? 'green' : 'blue'}`}>{task.status === 'imported' ? '已导入' : '待执行'}</span>{taskComic && <span className="research-comic-label">《{taskComic.title}》</span>}<div className="keyword-tags">{task.keywords.map((keyword) => <span key={keyword}>{keyword}</span>)}</div><p>{task.purpose || '未填写调研目的'}</p><div className="research-filter-row"><span>图文</span>{task.filters.publishedWithin !== 'all' && <span>一周内</span>}<span>未看过</span><span>最多点赞</span></div><small>跨词去重，上限 {task.limit} 条 · {task.createdAt}</small></div><div className="task-actions"><button className="secondary-button" type="button" onClick={() => copyKeywords(task.id, task.keywords)}>{copied === task.id ? <Check size={16} /> : <Clipboard size={16} />}{copied === task.id ? '已复制' : '复制关键词'}</button>{task.status !== 'imported' && <button className="primary-button" type="button" onClick={() => runTask(task.id, task.comicId, task.keywords, task.limit, task.filters.publishedWithin)} disabled={runningTaskId === task.id}>{runningTaskId === task.id ? <LoaderCircle className="spin" size={16} /> : <Play size={16} />}{runningTaskId === task.id ? '筛选查询中…' : results.length ? '重新查询' : '本机执行'}</button>}</div></div>
               {results.length > 0 && <div className="research-preview"><div className="research-preview-heading"><strong>查询结果</strong><span>已选择 {selectedUrls.size}/{results.length} 条</span></div>{results.map((result) => <div className="research-result" key={result.url}><input aria-label={`选择 ${result.title}`} type="checkbox" checked={selectedUrls.has(result.url)} onChange={() => toggleResult(task.id, result.url)} /><span className="result-rank">{result.rank}</span><span><strong>{result.title}</strong><small>{result.matchedKeyword ? `${result.matchedKeyword} · ` : ''}{result.author} · {result.likes.toLocaleString()} 赞{result.publishedAt ? ` · ${result.publishedAt}` : ''}</small></span><a aria-label={`打开 ${result.title}`} href={result.url} target="_blank" rel="noreferrer"><ExternalLink size={14} /></a></div>)}<button className="primary-button import-confirm" type="button" disabled={importingTaskId === task.id || selectedUrls.size === 0} onClick={() => confirmImport(task.id)}><Import size={15} />{importingTaskId === task.id ? '正在导入…' : `确认导入 ${selectedUrls.size} 条`}</button></div>}
             </article>
           }) : <div className="empty-state tall">当前账号暂无调研任务。</div>}</div>

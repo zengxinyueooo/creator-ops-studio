@@ -155,7 +155,7 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
       createdAt: formatTime(row.created_at),
       filters: {
         noteType: 'image' as const,
-        publishedWithin: (['day', 'week', 'half_year'].includes(row.filter_config?.publishedWithin) ? row.filter_config.publishedWithin : 'week') as 'day' | 'week' | 'half_year',
+        publishedWithin: (['all', 'day', 'week', 'half_year'].includes(row.filter_config?.publishedWithin) ? row.filter_config.publishedWithin : 'week') as 'all' | 'day' | 'week' | 'half_year',
         scope: 'unseen' as const,
         sort: 'most_liked' as const,
       },
@@ -354,7 +354,7 @@ export async function markCloudResearchImported(taskId: string) {
   if (error) throw error
 }
 
-export async function createCloudResearchTask(userId: string, accountId: string, input: { comicId: string; keywords: string[]; purpose: string; limit: number }) {
+export async function createCloudResearchTask(userId: string, accountId: string, input: { comicId: string; keywords: string[]; purpose: string; limit: number; publishedWithin: 'all' | 'week' }) {
   const { data, error } = await client().from('research_tasks').insert({
     user_id: userId,
     account_id: accountId,
@@ -365,8 +365,8 @@ export async function createCloudResearchTask(userId: string, accountId: string,
     result_limit: Math.min(10, Math.max(1, input.limit)),
     status: 'queued',
     provider: 'opencli',
-    command_preview: `OpenCLI browser batch: ${input.keywords.map((keyword) => JSON.stringify(keyword)).join(', ')}; image + week + unseen + most_liked; total ${input.limit}`,
-    filter_config: { noteType: 'image', publishedWithin: 'week', scope: 'unseen', sort: 'most_liked' },
+    command_preview: `OpenCLI browser batch: ${input.keywords.map((keyword) => JSON.stringify(keyword)).join(', ')}; image + ${input.publishedWithin === 'all' ? 'all time' : 'week'} + unseen + most_liked; total ${input.limit}`,
+    filter_config: { noteType: 'image', publishedWithin: input.publishedWithin, scope: 'unseen', sort: 'most_liked' },
   }).select('*').single()
   if (error) throw error
   return data

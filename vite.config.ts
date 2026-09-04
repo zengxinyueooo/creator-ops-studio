@@ -12,7 +12,8 @@ import { defineConfig } from 'vite'
 const execFileAsync = promisify(execFile)
 const projectRoot = dirname(fileURLToPath(import.meta.url))
 const NOTE_CARD_SELECTOR = 'section.note-item, section:has(a[href*="/search_result/"]), section:has(a[href*="/explore/"])'
-const FILTER_OPTION_SELECTOR = '#app span'
+const FILTER_TRIGGER_SELECTOR = '#app .filter'
+const FILTER_OPTION_SELECTOR = '#app .filter-panel .tags'
 
 type BrowserFindEntry = { ref?: number; text?: string; visible?: boolean; attrs?: Record<string, string> }
 type BrowserFindResult = { matches_n?: number; entries?: BrowserFindEntry[]; error?: { message?: string } }
@@ -106,9 +107,9 @@ function parseJson<T>(value: string, context: string): T {
   }
 }
 
-async function findExactTextRef(session: string, selector: string, label: string) {
+async function findExactTextRef(session: string, selector: string, label: string, windowMode: 'background' | 'foreground' = 'background') {
   const payload = parseJson<BrowserFindResult>(await runOpenCli([
-    'browser', session, 'find', '--css', selector, '--limit', '500', '--text-max', '80', '--window', 'background',
+    'browser', session, 'find', '--css', selector, '--limit', '500', '--text-max', '80', '--window', windowMode,
   ]), `查找“${label}”时`)
   if (payload.error) throw new Error(payload.error.message || `未找到筛选项“${label}”`)
   const normalize = (value: unknown) => String(value ?? '').replace(/\s+/g, '').trim()
@@ -117,13 +118,33 @@ async function findExactTextRef(session: string, selector: string, label: string
   return String(entry.ref)
 }
 
-async function clickFreshTextTarget(session: string, selector: string, label: string) {
-  const ref = await findExactTextRef(session, selector, label)
+async function clickFreshTextTarget(session: string, selector: string, label: string, windowMode: 'background' | 'foreground' = 'background') {
+  const ref = await findExactTextRef(session, selector, label, windowMode)
   const result = parseJson<{ clicked?: boolean; match_level?: string; error?: { message?: string } }>(await runOpenCli([
-    'browser', session, 'click', ref, '--window', 'background',
+    'browser', session, 'click', ref, '--window', windowMode,
   ]), `点击“${label}”时`)
   if (result.error || !result.clicked) throw new Error(result.error?.message || `筛选项“${label}”点击失败`)
   if (result.match_level === 'reidentified') throw new Error(`筛选项“${label}”在点击前发生变化，已停止本次任务`)
+}
+
+async function readFilterState(session: string) {
+  const raw = await runOpenCli(['browser', session, 'eval', String.raw`(() => ({
+    open: Boolean(document.querySelector('#app .filter-panel .tags')),
+    active: [...document.querySelectorAll('#app .filter-panel .tags.active')]
+      .map((item) => (item.textContent || '').replace(/\s+/g, '').trim())
+  }))()`, '--window', 'foreground'])
+  return parseJson<{ open?: boolean; active?: string[] }>(raw, '检查筛选状态时')
+}
+
+async function ensureFilterOption(session: string, label: string) {
+  const before = await readFilterState(session)
+  if (!before.open) throw new Error('小红书筛选面板未正常打开，已停止本次任务')
+  if (before.active?.includes(label)) return
+  await clickFreshTextTarget(session, FILTER_OPTION_SELECTOR, label, 'foreground')
+  await runOpenCli(['browser', session, 'wait', 'time', '2', '--window', 'foreground'])
+  await inspectPageHealth(session)
+  const after = await readFilterState(session)
+  if (!after.active?.includes(label)) throw new Error(`筛选项“${label}”未生效，已停止本次任务`)
 }
 
 const EXTRACT_VISIBLE_NOTES_JS = String.raw`(() => {
@@ -165,23 +186,39 @@ async function inspectPageHealth(session: string) {
   if (state.verification) throw new Error('小红书页面出现安全验证或访问异常，已停止本次任务')
 }
 
-async function searchOneKeyword(session: string, keyword: string) {
+async function waitForSearchResults(session: string) {
+  try {
+    await runOpenCli(['browser', session, 'wait', 'selector', NOTE_CARD_SELECTOR, '--timeout', '15000', '--window', 'background'], 25_000)
+    return true
+  } catch (caught) {
+    const raw = await runOpenCli(['browser', session, 'eval', String.raw`(() => ({
+      noResults: /没找到相关内容|换个词试试吧/.test(document.body?.innerText || ''),
+      resultCards: document.querySelectorAll('section.note-item, section:has(a[href*="/search_result/"]), section:has(a[href*="/explore/"])').length,
+    }))()`, '--window', 'background'])
+    const state = parseJson<{ noResults?: boolean; resultCards?: number }>(raw, '检查搜索结果时')
+    if (state.noResults || state.resultCards === 0) return false
+    throw caught
+  }
+}
+
+async function searchOneKeyword(session: string, keyword: string, publishedWithin: 'all' | 'week') {
   const url = `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(keyword)}&source=web_search_result_notes`
   await runOpenCli(['browser', session, 'open', url, '--window', 'background'], 75_000)
   await inspectPageHealth(session)
-  await runOpenCli(['browser', session, 'wait', 'selector', NOTE_CARD_SELECTOR, '--timeout', '15000', '--window', 'background'], 25_000)
+  if (!await waitForSearchResults(session)) return []
 
   await clickFreshTextTarget(session, '#image', '图文')
   await runOpenCli(['browser', session, 'wait', 'time', '1', '--window', 'background'])
   await inspectPageHealth(session)
-  await clickFreshTextTarget(session, '.filter span, .filter', '筛选')
-  await runOpenCli(['browser', session, 'wait', 'text', '最多点赞', '--timeout', '8000', '--window', 'background'])
-  for (const label of ['最多点赞', '一周内', '未看过']) {
-    await clickFreshTextTarget(session, FILTER_OPTION_SELECTOR, label)
-    await runOpenCli(['browser', session, 'wait', 'time', '1', '--window', 'background'])
-    await inspectPageHealth(session)
+  const filterState = await readFilterState(session)
+  if (!filterState.open) {
+    await clickFreshTextTarget(session, FILTER_TRIGGER_SELECTOR, '筛选', 'foreground')
+    await runOpenCli(['browser', session, 'wait', 'selector', FILTER_OPTION_SELECTOR, '--timeout', '15000', '--window', 'foreground'], 25_000)
   }
-  await runOpenCli(['browser', session, 'wait', 'selector', NOTE_CARD_SELECTOR, '--timeout', '15000', '--window', 'background'], 25_000)
+  for (const label of ['最多点赞', ...(publishedWithin === 'week' ? ['一周内'] : []), '未看过']) {
+    await ensureFilterOption(session, label)
+  }
+  if (!await waitForSearchResults(session)) return []
   const notes = parseJson<RawNote[]>(await runOpenCli(['browser', session, 'eval', EXTRACT_VISIBLE_NOTES_JS, '--window', 'background']), '读取搜索结果时')
   if (!Array.isArray(notes)) throw new Error('小红书搜索结果格式异常，已停止本次任务')
   return notes.map((note) => {
@@ -205,7 +242,7 @@ async function readJsonBody(req: IncomingMessage) {
     body += chunk
     if (body.length > 8_192) throw new Error('请求内容过大')
   }
-  return JSON.parse(body) as { keywords?: unknown; requiredComicTitle?: unknown; limit?: unknown }
+  return JSON.parse(body) as { keywords?: unknown; requiredComicTitle?: unknown; limit?: unknown; publishedWithin?: unknown }
 }
 
 async function readDownloadedImages(outputRoot: string) {
@@ -266,10 +303,11 @@ function localOpenCliPlugin() {
           if (!requiredComicTitle || requiredComicTitle.length > 80) throw new Error('缺少有效的漫画名')
           if (keywords.some((keyword) => !keyword.includes(requiredComicTitle))) throw new Error(`每个关键词都必须包含漫画名“${requiredComicTitle}”`)
           const limit = Math.min(10, Math.max(1, Number.parseInt(String(input.limit ?? 10), 10) || 10))
+          const publishedWithin = input.publishedWithin === 'all' ? 'all' : 'week'
 
           const byUrl = new Map<string, Awaited<ReturnType<typeof searchOneKeyword>>[number]>()
           for (const keyword of keywords) {
-            const notes = await searchOneKeyword(session, keyword)
+            const notes = await searchOneKeyword(session, keyword, publishedWithin)
             for (const note of notes) {
               const identity = note.noteId || note.url
               const existing = byUrl.get(identity)
