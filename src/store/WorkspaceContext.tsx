@@ -32,6 +32,7 @@ import {
 import type { AssetContentType, AssetItem, AssetReviewStatus, AssetVisualFormat, Comic, ComicStatus, ContentBrief, CopyrightStatus, ReferenceItem, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
 
 const STORAGE_KEY = 'creator-ops-studio:workspace:v1'
+const CLOUD_CACHE_KEY_PREFIX = 'creator-ops-studio:workspace:cloud-cache:'
 const EMPTY_STATE: WorkspaceState = { accounts: [], activeAccountId: '', comics: [], topics: [], references: [], researchTasks: [], schedules: [], assets: [] }
 
 interface WorkspaceContextValue {
@@ -61,9 +62,8 @@ interface WorkspaceContextValue {
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null)
 
-function loadLocalState(): WorkspaceState {
-  const stored = localStorage.getItem(STORAGE_KEY)
-  if (!stored) return demoState
+function hydrateWorkspaceState(stored: string | null): WorkspaceState | null {
+  if (!stored) return null
   try {
     const parsed = JSON.parse(stored) as Partial<WorkspaceState>
     return {
@@ -102,39 +102,54 @@ function loadLocalState(): WorkspaceState {
       })),
     }
   } catch {
-    return demoState
+    return null
   }
+}
+
+function loadLocalState(): WorkspaceState {
+  return hydrateWorkspaceState(localStorage.getItem(STORAGE_KEY)) ?? demoState
+}
+
+function loadCloudCache(userId: string) {
+  return hydrateWorkspaceState(localStorage.getItem(`${CLOUD_CACHE_KEY_PREFIX}${userId}`))
 }
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth()
-  const [state, setState] = useState<WorkspaceState>(() => dataMode === 'local' ? loadLocalState() : EMPTY_STATE)
-  const [loading, setLoading] = useState(dataMode === 'supabase')
+  const [initialCloudCache] = useState<WorkspaceState | null>(() => dataMode === 'supabase' && user ? loadCloudCache(user.id) : null)
+  const [state, setState] = useState<WorkspaceState>(() => dataMode === 'local' ? loadLocalState() : initialCloudCache ?? EMPTY_STATE)
+  const [loading, setLoading] = useState(dataMode === 'supabase' && !initialCloudCache)
   const [seeding, setSeeding] = useState(false)
   const [error, setError] = useState('')
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (blocking = false) => {
     if (dataMode !== 'supabase' || !user) return
-    setLoading(true)
+    if (blocking) setLoading(true)
     setError('')
     try {
       setState(await loadCloudWorkspace(user.id))
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '云端数据加载失败')
     } finally {
-      setLoading(false)
+      if (blocking) setLoading(false)
     }
   }, [user])
 
   useEffect(() => {
     if (dataMode !== 'supabase') return
-    const timer = window.setTimeout(() => void reload(), 0)
+    const timer = window.setTimeout(() => void reload(!initialCloudCache), 0)
     return () => window.clearTimeout(timer)
-  }, [reload])
+  }, [initialCloudCache, reload])
 
   useEffect(() => {
     if (dataMode === 'local') localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   }, [state])
+
+  useEffect(() => {
+    if (dataMode === 'supabase' && user && state.accounts.length) {
+      localStorage.setItem(`${CLOUD_CACHE_KEY_PREFIX}${user.id}`, JSON.stringify(state))
+    }
+  }, [state, user])
 
   const activeAccount = state.accounts.find((account) => account.id === state.activeAccountId) ?? state.accounts[0] ?? demoState.accounts[0]
   const accountTopics = state.topics.filter((topic) => topic.accountId === activeAccount.id)
@@ -660,7 +675,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             if (!user) return
             setSeeding(true)
             setError('')
-            void seedCloudWorkspace(user.id).then(reload).catch((caught) => {
+            void seedCloudWorkspace(user.id).then(() => reload()).catch((caught) => {
               setError(caught instanceof Error ? caught.message : '初始化失败')
             }).finally(() => setSeeding(false))
           }}>{seeding ? '正在初始化…' : '初始化我的工作台'}</button>
