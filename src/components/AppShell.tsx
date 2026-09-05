@@ -1,10 +1,11 @@
 import {
   BarChart3,
   BookOpenCheck,
+  Check,
+  ChevronDown,
   Library,
   Boxes,
   CalendarDays,
-  ChevronDown,
   FileText,
   Inbox,
   LayoutDashboard,
@@ -14,7 +15,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
-import type { CSSProperties } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
 import { dataMode } from '../lib/supabase'
 import { useWorkspace } from '../store/WorkspaceContext'
 import { useAuth } from '../auth/AuthContext'
@@ -30,9 +31,74 @@ const navigation = [
   { to: '/analytics', label: '数据复盘', icon: BarChart3 },
 ]
 
+const AVATAR_SIZE = 96
+
+function avatarStorageKey(accountId: string) {
+  return `creator-ops-avatar:${accountId}`
+}
+
+function readAvatarDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const source = URL.createObjectURL(file)
+    const image = new Image()
+    image.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = AVATAR_SIZE
+      canvas.height = AVATAR_SIZE
+      const context = canvas.getContext('2d')
+      if (!context) {
+        URL.revokeObjectURL(source)
+        reject(new Error('无法处理图片'))
+        return
+      }
+      const scale = Math.max(AVATAR_SIZE / image.width, AVATAR_SIZE / image.height)
+      const width = image.width * scale
+      const height = image.height * scale
+      context.drawImage(image, (AVATAR_SIZE - width) / 2, (AVATAR_SIZE - height) / 2, width, height)
+      URL.revokeObjectURL(source)
+      resolve(canvas.toDataURL('image/jpeg', 0.85))
+    }
+    image.onerror = () => {
+      URL.revokeObjectURL(source)
+      reject(new Error('图片读取失败'))
+    }
+    image.src = source
+  })
+}
+
 export function AppShell() {
   const { state, activeAccount, setActiveAccount } = useWorkspace()
   const { user, signOut } = useAuth()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [avatarSrc, setAvatarSrc] = useState(() => localStorage.getItem(avatarStorageKey(activeAccount.id)))
+  const menuRef = useRef<HTMLDivElement>(null)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setAvatarSrc(localStorage.getItem(avatarStorageKey(activeAccount.id)))
+  }, [activeAccount.id])
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const close = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [menuOpen])
+
+  async function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    try {
+      const dataUrl = await readAvatarDataUrl(file)
+      localStorage.setItem(avatarStorageKey(activeAccount.id), dataUrl)
+      setAvatarSrc(dataUrl)
+    } catch {
+      // 图片解析失败时保留原头像
+    }
+  }
 
   return (
     <div className="app-shell" style={{ '--account-accent': activeAccount.accent } as CSSProperties}>
@@ -45,14 +111,40 @@ export function AppShell() {
 
         <div className="account-switcher-wrap">
           <label>当前账号</label>
-          <div className="account-switcher">
-            <span className="account-avatar">{activeAccount.kind === 'manga' ? '漫' : '成'}</span>
-            <select value={activeAccount.id} onChange={(event) => setActiveAccount(event.target.value)}>
-              {state.accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-            </select>
-            <ChevronDown size={16} />
+          <div className="account-switcher" ref={menuRef}>
+            <button
+              type="button"
+              className="account-avatar"
+              title="上传头像"
+              onClick={() => avatarInputRef.current?.click()}
+            >
+              {avatarSrc ? <img src={avatarSrc} alt={activeAccount.name} /> : (activeAccount.kind === 'manga' ? '漫' : '成')}
+            </button>
+            <button type="button" className="account-trigger" onClick={() => setMenuOpen((open) => !open)} aria-haspopup="listbox" aria-expanded={menuOpen}>
+              <strong>{activeAccount.name}</strong>
+              <small>{activeAccount.handle === '待创建' ? '第二账号 · 待创建' : `小红书号 ${activeAccount.handle}`}</small>
+            </button>
+            <ChevronDown size={16} className={menuOpen ? 'chevron open' : 'chevron'} />
+            {menuOpen && (
+              <div className="account-menu" role="listbox" aria-label="切换账号">
+                {state.accounts.map((account) => (
+                  <button
+                    key={account.id}
+                    type="button"
+                    role="option"
+                    aria-selected={account.id === activeAccount.id}
+                    className={account.id === activeAccount.id ? 'active' : ''}
+                    onClick={() => { setActiveAccount(account.id); setMenuOpen(false) }}
+                  >
+                    <span className="menu-dot" style={{ background: account.accent }} />
+                    <span className="menu-name">{account.name}</span>
+                    {account.id === activeAccount.id && <Check size={14} />}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-          <p>{activeAccount.handle === '待创建' ? '第二账号 · 待创建' : `小红书号 ${activeAccount.handle}`}</p>
+          <input ref={avatarInputRef} type="file" accept="image/*" hidden onChange={(event) => void handleAvatarChange(event)} />
         </div>
 
         <nav>
