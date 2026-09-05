@@ -1,4 +1,4 @@
-import { Check, FileImage, ImageOff, Layers3, Link2, RefreshCw, Search, ShieldCheck, Upload, X } from 'lucide-react'
+import { Check, FileImage, ImageOff, Layers3, Link2, RefreshCw, ScanSearch, Search, ShieldCheck, Upload, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { PillSelect } from '../components/PillSelect'
@@ -194,9 +194,9 @@ export function AssetsPage() {
           <div className="asset-card-copy">
             <div className="asset-badge-row"><span className={`status-badge ${asset.visualFormat === 'single' ? 'green' : asset.visualFormat === 'uncertain' ? 'amber' : 'gray'}`}>{visualLabels[asset.visualFormat]}</span><span className="asset-type-chip">{contentTypeLabels[asset.contentType]}</span></div>
             <h3>{[asset.workName, asset.chapter].filter(Boolean).join(' · ') || asset.originalName}</h3>
-            <p>{asset.characters.length ? asset.characters.join('、') : '角色待标注'} · {copyrightLabels[asset.copyrightStatus]}</p>
+            <div className="asset-people-row">{asset.characters.length ? asset.characters.map((character) => <span className="character-chip" key={character}>{character}</span>) : <span className="character-chip empty">角色待标注</span>}<span className="copyright-chip">{copyrightLabels[asset.copyrightStatus]}</span></div>
             {asset.tags.length > 0 && <div className="asset-tags" aria-label="素材标签">{[...new Set(asset.tags)].slice(0, 4).map((tag) => <button className={query.trim() === tag ? 'active' : ''} type="button" key={tag} onClick={() => setQuery(tag)} aria-label={`按标签 ${tag} 筛选`}>#{tag}</button>)}</div>}
-            <p className="classification-note">{asset.classificationNote || '等待图片识别 Workflow 返回结果'}</p>
+            <p className="classification-note"><ScanSearch size={13} />{asset.classificationNote || '等待图片识别 Workflow 返回结果'}</p>
             <div className="usage-line"><span><RefreshCw size={12} />使用 {asset.usageCount} 次{asset.lastUsedAt ? ` · 最近 ${asset.lastUsedAt}` : ''}</span>{asset.coverUsageCount > 0 && <span>封面 {asset.coverUsageCount} 次</span>}</div>
             {asset.visualFormat === 'uncertain' && <div className="asset-review-actions"><button disabled={busyAssetId === asset.id} onClick={() => void changeClassification(asset.id, 'single')}><Check size={13} />确认单图</button><button disabled={busyAssetId === asset.id} onClick={() => void changeClassification(asset.id, 'collage')}><ImageOff size={13} />标为拼图</button></div>}
             <button className={`asset-select-button ${selected ? 'selected' : ''}`} disabled={!selectable || busyAssetId === asset.id || !selectedTopicId} onClick={() => void toggleSelection(asset.id)}>{selected ? <Check size={15} /> : <Layers3 size={15} />}{selected ? '已加入当前 Brief' : selectable ? '加入当前 Brief' : '不可选'}</button>
