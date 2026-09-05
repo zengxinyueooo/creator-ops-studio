@@ -16,9 +16,12 @@ const serializationLabels = {
   unknown: '连载状态待确认',
 }
 
-function ComicCard({ comic, mode, onKeep, onDrop }: {
+const COVER_TONES = ['pink', 'blue', 'purple', 'amber'] as const
+
+function ComicCard({ comic, mode, tone, onKeep, onDrop }: {
   comic: Comic
   mode: 'candidate' | 'selected'
+  tone: string
   onKeep?: () => void
   onDrop?: () => void
 }) {
@@ -26,7 +29,7 @@ function ComicCard({ comic, mode, onKeep, onDrop }: {
   const serialization = serializationLabels[comic.serializationStatus]
   return (
     <article className="comic-card">
-      <div className="comic-cover-placeholder"><BookOpen size={25} /><span>{comic.title.slice(0, 1)}</span></div>
+      <div className={`comic-cover-placeholder ${tone}`}><BookOpen size={25} /><span>{comic.title.slice(0, 1)}</span></div>
       <div className="comic-card-body">
         <div className="comic-card-top">
           <span className={`status-badge ${mode === 'selected' ? 'green' : 'amber'}`}>{mode === 'selected' ? '已保留' : '待审核'}</span>
@@ -120,12 +123,12 @@ export function ComicsPage() {
 
       <section className="comic-section">
         <div className="comic-section-heading"><div><span className="comic-step">1</span><span><h2>待审核候选</h2><p>调研得到的漫画先集中放在这里</p></span></div><span>{candidates.length} 部</span></div>
-        {candidates.length ? <div className="comic-grid">{candidates.map((comic) => <ComicCard key={comic.id} comic={comic} mode="candidate" onKeep={() => void review(comic.id, true)} onDrop={() => void review(comic.id, false)} />)}</div> : <div className="comic-empty"><Check size={22} /><strong>候选都审核完了</strong><span>点击右上角“录入调研结果”可以继续添加。</span></div>}
+        {candidates.length ? <div className="comic-grid">{candidates.map((comic, index) => <ComicCard key={comic.id} comic={comic} mode="candidate" tone={COVER_TONES[index % COVER_TONES.length]} onKeep={() => void review(comic.id, true)} onDrop={() => void review(comic.id, false)} />)}</div> : <div className="comic-empty"><Check size={22} /><strong>候选都审核完了</strong><span>点击右上角“录入调研结果”可以继续添加。</span></div>}
       </section>
 
       <section className="comic-section">
         <div className="comic-section-heading"><div><span className="comic-step done">2</span><span><h2>我的漫画库</h2><p>你确认保留、后续准备做内容的漫画</p></span></div><span>{selected.length} 部</span></div>
-        {selected.length ? <div className="comic-grid">{selected.map((comic) => <ComicCard key={comic.id} comic={comic} mode="selected" />)}</div> : <div className="comic-empty"><Library size={22} /><strong>还没有保留的漫画</strong><span>审核候选漫画后，它会出现在这里。</span></div>}
+        {selected.length ? <div className="comic-grid">{selected.map((comic, index) => <ComicCard key={comic.id} comic={comic} mode="selected" tone={COVER_TONES[index % COVER_TONES.length]} />)}</div> : <div className="comic-empty"><Library size={22} /><strong>还没有保留的漫画</strong><span>审核候选漫画后，它会出现在这里。</span></div>}
       </section>
     </>
   )
