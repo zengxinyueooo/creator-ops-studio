@@ -4,6 +4,7 @@ import { Database, RefreshCw, Sparkles } from 'lucide-react'
 import { useAuth } from '../auth/AuthContext'
 import { demoState } from '../data/demo'
 import { dataMode } from '../lib/supabase'
+import { generateContentBrief } from '../lib/briefGeneration'
 import {
   captureXiaohongshuNote,
   downloadCapturedImage,
@@ -287,24 +288,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const topic = state.topics.find((item) => item.id === topicId)
       if (!topic) throw new Error('选题不存在')
       const comic = state.comics.find((item) => item.id === topic.comicId)
-      const references = state.references
+      const linkedReferences = state.references
         .filter((reference) => reference.topicIds.includes(topicId) && reference.reviewStatus === 'kept')
+      const references = linkedReferences
+        .filter((reference) => reference.detailStatus === 'detailed')
         .sort((left, right) => right.likes - left.likes)
-      const strongestReference = references[0]
-      const emotion = topic.tags.slice(0, 3).join('、') || '情绪反差、角色关系'
-      const brief: ContentBrief = {
-        status: 'candidate',
-        angle: references.length
-          ? `综合 ${references.length} 条已保留参考笔记，围绕${comic ? `《${comic.title}》` : topic.subtitle}的“${topic.title}”提炼新的表达角度；重点参考高互动笔记“${strongestReference.title}”传递的关注点，但不复刻原文。`
-          : `围绕${comic ? `《${comic.title}》` : topic.subtitle}的“${topic.title}”展开，用具体画面呈现角色关系和情绪变化。`,
-        coreEmotion: emotion,
-        hook: `${topic.title}，真正戳人的其实是这一刻的反应。`,
-        structure: references.length
-          ? ['用能直接兑现标题的关键画面开场', `承接参考笔记共同关注的情绪或关系变化（${references.slice(0, 2).map((reference) => reference.title).join(' / ')}）`, '加入自己的判断，并用具体问题邀请讨论']
-          : ['用最直观的关键画面开场', '补充角色反应或前后反差', '加入个人感受并用问题邀请讨论'],
-        assetGuidance: ['能直接对应标题的主画面', '角色表情或动作特写', '关系变化清晰的同框画面'],
-        avoidances: ['不照搬来源笔记句式', '不泄露超出当前选题的关键剧情'],
-      }
+      if (linkedReferences.length && !references.length) throw new Error('请先采集至少一篇已保留参考笔记的完整信息，再生成 Brief')
+      const brief: ContentBrief = await generateContentBrief(topic, comic, references)
       if (dataMode === 'supabase') await updateCloudTopicBrief(topicId, brief)
       setState((current) => ({
         ...current,
