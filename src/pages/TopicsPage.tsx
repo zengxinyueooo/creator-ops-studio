@@ -1,5 +1,6 @@
 import { CheckCircle2, Compass, FileImage, Heart, ListOrdered, Plus, ShieldAlert, SlidersHorizontal, XCircle, Zap } from 'lucide-react'
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { TopicCard } from '../components/TopicCard'
 import { statusMeta } from '../data/status'
 import { useWorkspace } from '../store/WorkspaceContext'
@@ -9,6 +10,7 @@ const columns: TopicStatus[] = ['idea', 'research', 'materials', 'draft', 'revie
 
 export function TopicsPage() {
   const { activeAccount, accountTopics, state, updateTopicStatus, addTopic, generateTopicBrief, setTopicBriefStatus } = useWorkspace()
+  const navigate = useNavigate()
   const comics = state.comics.filter((comic) => comic.accountId === activeAccount.id && comic.status !== 'archived')
   const [showForm, setShowForm] = useState(false)
   const [title, setTitle] = useState('')
@@ -33,6 +35,25 @@ export function TopicsPage() {
       setSelectedBriefId(topicId)
     } catch (caught) {
       setBriefError(caught instanceof Error ? caught.message : 'Brief 生成失败')
+    }
+  }
+
+  async function approveBrief(topicId: string) {
+    setBriefError('')
+    try {
+      await setTopicBriefStatus(topicId, 'approved')
+      navigate(`/assets?topic=${encodeURIComponent(topicId)}`)
+    } catch (caught) {
+      setBriefError(caught instanceof Error ? caught.message : 'Brief 审核结果保存失败')
+    }
+  }
+
+  async function rejectBrief(topicId: string) {
+    setBriefError('')
+    try {
+      await setTopicBriefStatus(topicId, 'rejected')
+    } catch (caught) {
+      setBriefError(caught instanceof Error ? caught.message : 'Brief 审核结果保存失败')
     }
   }
 
@@ -64,7 +85,11 @@ export function TopicsPage() {
           </div>
         </div>
         {briefError && <p className="research-error">{briefError}</p>}
-        <div className="brief-actions"><span>参考笔记 {selectedBrief.referenceCount} 条 · 通过后进入素材筛选</span><div className="button-row"><button className="secondary-button" onClick={() => void setTopicBriefStatus(selectedBrief.id, 'rejected').catch((error) => setBriefError(error.message))}><XCircle size={15} />放弃</button><button className="primary-button" onClick={() => void setTopicBriefStatus(selectedBrief.id, 'approved').catch((error) => setBriefError(error.message))}><CheckCircle2 size={15} />通过 Brief</button></div></div>
+        <div className="brief-actions"><span>参考笔记 {selectedBrief.referenceCount} 条 · {selectedBrief.brief.status === 'approved' ? '已进入素材筛选' : selectedBrief.brief.status === 'rejected' ? '已退回调研' : '通过后进入素材筛选'}</span><div className="button-row">
+          {selectedBrief.brief.status === 'candidate' && <><button className="secondary-button" onClick={() => void rejectBrief(selectedBrief.id)}><XCircle size={15} />放弃</button><button className="primary-button" onClick={() => void approveBrief(selectedBrief.id)}><CheckCircle2 size={15} />通过 Brief</button></>}
+          {selectedBrief.brief.status === 'approved' && <button className="primary-button" onClick={() => navigate(`/assets?topic=${encodeURIComponent(selectedBrief.id)}`)}><FileImage size={15} />前往筛选素材</button>}
+          {selectedBrief.brief.status === 'rejected' && <button className="secondary-button" onClick={() => void createBrief(selectedBrief.id)}>重新生成 Brief</button>}
+        </div></div>
       </section>}
       <section className="kanban-board">
         {columns.map((status) => {
