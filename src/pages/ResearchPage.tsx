@@ -1,6 +1,7 @@
 import { BookOpenCheck, Check, Clipboard, ExternalLink, ImageDown, Import, Layers3, Library, LoaderCircle, PenLine, Play, Plus, Search, ShieldCheck, SlidersHorizontal, Sparkles, TerminalSquare, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { searchXiaohongshuBatch } from '../lib/opencliBridge'
+import { PillSelect } from '../components/PillSelect'
 import { useWorkspace } from '../store/WorkspaceContext'
 import type { ReferenceItem, XhsResearchResult } from '../types'
 
@@ -78,6 +79,10 @@ export function ResearchPage() {
 
   async function createTask(event: FormEvent) {
     event.preventDefault()
+    if (!comicId) {
+      setError('请先选择所属漫画')
+      return
+    }
     const keywords = [...new Set([...selectedKeywords, ...parseKeywords(keywordText)])]
     setCreating(true)
     setError('')
@@ -235,7 +240,7 @@ export function ResearchPage() {
       <form className="research-create-form" onSubmit={createTask}>
         <div className="field-group">
           <span className="field-label"><Library size={13} />所属漫画</span>
-          <select value={comicId} onChange={(event) => { setComicId(event.target.value); setKeywordSelection(null); setKeywordText('') }} required><option value="">选择所属漫画</option>{comics.map((comic) => <option key={comic.id} value={comic.id}>{comic.title}</option>)}</select>
+          <PillSelect value={comicId} ariaLabel="所属漫画" placeholder="选择所属漫画" options={[{ value: '', label: '选择所属漫画' }, ...comics.map((comic) => ({ value: comic.id, label: comic.title }))]} onChange={(nextId) => { setComicId(nextId); setKeywordSelection(null); setKeywordText('') }} />
         </div>
         <div className="field-group">
           <span className="field-label"><PenLine size={13} />调研目的</span>
@@ -294,7 +299,7 @@ export function ResearchPage() {
           <div className="topic-builder-heading"><BookOpenCheck size={20} /><div><strong>沉淀为选题</strong><span>已选 {selectedReferences.length} 条{selectionComicId ? ` · 《${comics.find((comic) => comic.id === selectionComicId)?.title ?? ''}》` : ''}</span></div></div>
           <input value={topicTitle} onChange={(event) => setTopicTitle(event.target.value)} placeholder="选题标题（可改写参考笔记标题）" maxLength={120} />
           <input value={topicSubtitle} onChange={(event) => setTopicSubtitle(event.target.value)} placeholder="选题说明（选填）" maxLength={160} />
-          <select value={topicPillar} onChange={(event) => setTopicPillar(event.target.value)}>{(activeAccount.pillars.length ? activeAccount.pillars : ['高能片段']).map((pillar) => <option key={pillar} value={pillar}>{pillar}</option>)}</select>
+          <PillSelect value={topicPillar} ariaLabel="内容支柱" placeholder="选择内容支柱" options={(activeAccount.pillars.length ? activeAccount.pillars : ['高能片段']).map((pillar) => ({ value: pillar, label: pillar }))} onChange={setTopicPillar} />
           <button className="primary-button" type="submit" disabled={!selectedReferences.length || creatingTopic}><Layers3 size={15} />{creatingTopic ? '创建中…' : '创建选题'}</button>
         </form>
       </section>

@@ -1,5 +1,6 @@
 import { CalendarDays, Plus, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
+import { PillSelect } from '../components/PillSelect'
 import { useWorkspace } from '../store/WorkspaceContext'
 import type { ScheduleItem } from '../types'
 
@@ -55,9 +56,7 @@ export function CalendarPage() {
 
       {showForm && <form className="panel calendar-create-form" onSubmit={submit}>
         <input placeholder="计划名称，例如：角色观察发布" value={title} onChange={(event) => setTitle(event.target.value)} maxLength={60} required aria-label="计划名称" />
-        <select value={kind} onChange={(event) => setKind(event.target.value as ScheduleItem['kind'])} aria-label="计划类型">
-          {KIND_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
+        <PillSelect value={kind} ariaLabel="计划类型" options={KIND_OPTIONS} onChange={(value) => setKind(value as ScheduleItem['kind'])} />
         <input placeholder="时间，例如：周五 20:00" value={dateLabel} onChange={(event) => setDateLabel(event.target.value)} maxLength={30} aria-label="计划时间" />
         <div className="button-row"><button type="button" className="secondary-button" onClick={() => setShowForm(false)}>取消</button><button type="submit" className="primary-button" disabled={saving}>{saving ? '保存中…' : '添加'}</button></div>
       </form>}

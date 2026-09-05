@@ -2,6 +2,7 @@ import { CheckCircle2, Compass, FileImage, Heart, ListOrdered, Plus, ShieldAlert
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { TopicCard } from '../components/TopicCard'
+import { PillSelect } from '../components/PillSelect'
 import { statusMeta } from '../data/status'
 import { useWorkspace } from '../store/WorkspaceContext'
 import type { TopicStatus } from '../types'
@@ -60,7 +61,7 @@ export function TopicsPage() {
   return (
     <>
       <section className="page-heading compact-heading"><div><span className="eyebrow">CONTENT PIPELINE</span><h1>选题工作流</h1><p>从灵感到发布准备，所有关键节点由你审核。</p></div><div className="button-row"><button className="secondary-button"><SlidersHorizontal size={16} />筛选</button><button className="primary-button" onClick={() => setShowForm((value) => !value)}><Plus size={17} />新建选题</button></div></section>
-      {showForm && <form className="quick-form topic-quick-form" onSubmit={submit}><select value={comicId} onChange={(event) => setComicId(event.target.value)}><option value="">不关联漫画</option>{comics.map((comic) => <option key={comic.id} value={comic.id}>{comic.title}</option>)}</select><input autoFocus placeholder="选题标题" value={title} onChange={(e) => setTitle(e.target.value)} /><input placeholder="章节或内容角度" value={subtitle} onChange={(e) => setSubtitle(e.target.value)} /><select value={pillar} onChange={(e) => setPillar(e.target.value)}>{activeAccount.pillars.map((item) => <option key={item}>{item}</option>)}</select><button className="primary-button" type="submit">加入灵感池</button></form>}
+      {showForm && <form className="quick-form topic-quick-form" onSubmit={submit}><PillSelect value={comicId} ariaLabel="关联漫画" placeholder="不关联漫画" options={[{ value: '', label: '不关联漫画' }, ...comics.map((comic) => ({ value: comic.id, label: comic.title }))]} onChange={setComicId} /><input autoFocus placeholder="选题标题" value={title} onChange={(e) => setTitle(e.target.value)} /><input placeholder="章节或内容角度" value={subtitle} onChange={(e) => setSubtitle(e.target.value)} /><PillSelect value={pillar} ariaLabel="内容支柱" placeholder="选择内容支柱" options={activeAccount.pillars.map((item) => ({ value: item, label: item }))} onChange={setPillar} /><button className="primary-button" type="submit">加入灵感池</button></form>}
       {briefError && !selectedBrief?.brief && <p className="research-error">{briefError}</p>}
       {selectedBrief?.brief && <section className="brief-panel panel">
         <div className="brief-panel-heading"><div><span className="eyebrow">XIAOHONGSHU CONTENT BRIEF</span><h2>{selectedBrief.title}</h2><p>{selectedBrief.subtitle}</p></div><span className={`status-badge ${selectedBrief.brief.status === 'approved' ? 'green' : selectedBrief.brief.status === 'rejected' ? 'gray' : 'amber'}`}>{selectedBrief.brief.status === 'approved' ? 'Brief 已通过' : selectedBrief.brief.status === 'rejected' ? '已放弃' : '待你审核'}</span></div>

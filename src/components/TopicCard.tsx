@@ -1,4 +1,5 @@
 import { Clock3, Eye, FileImage, Link2 } from 'lucide-react'
+import { PillSelect } from './PillSelect'
 import { statusMeta } from '../data/status'
 import type { Topic, TopicStatus } from '../types'
 
@@ -13,9 +14,7 @@ export function TopicCard({ topic, compact = false, onStatusChange, onOpenBrief,
       <div className="topic-meta"><span><Link2 size={14} />{topic.referenceCount}</span><span><FileImage size={14} />{topic.assetCount}</span>{topic.dueAt && <span><Clock3 size={14} />{topic.dueAt}</span>}</div>
       {onStatusChange && (
         <div className="topic-card-actions">
-          <select className="status-select" value={topic.status} onChange={(event) => onStatusChange(event.target.value as TopicStatus)} aria-label="调整选题状态">
-            {Object.entries(statusMeta).map(([status, item]) => <option key={status} value={status}>{item.label}</option>)}
-          </select>
+          <PillSelect value={topic.status} ariaLabel="调整选题状态" menuAlign="right" options={Object.entries(statusMeta).map(([status, item]) => ({ value: status, label: item.label }))} onChange={(status) => onStatusChange(status as TopicStatus)} />
           {topic.brief && <button className="brief-link-button" type="button" onClick={onOpenBrief}><Eye size={13} />查看 Brief</button>}
           {!topic.brief && onCreateBrief && <button className="brief-link-button" type="button" onClick={onCreateBrief}><Eye size={13} />生成 Brief</button>}
         </div>
