@@ -475,7 +475,7 @@ export async function uploadCloudAssets(
   userId: string,
   accountId: string,
   files: File[],
-  metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; comicId?: string; topicId?: string; sourceReferenceId?: string; sourceNoteId?: string; sourceNoteTags?: string[]; visualFormat?: AssetVisualFormat; contentType?: AssetContentType; characters?: string[] },
+  metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; comicId?: string; topicId?: string; sourceReferenceId?: string; sourceNoteId?: string; sourceNoteTags?: string[]; visualFormat?: AssetVisualFormat; contentType?: AssetContentType; characters?: string[]; classificationNote?: string },
 ) {
   const db = client()
   const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
@@ -515,7 +515,9 @@ export async function uploadCloudAssets(
       tags: metadata.tags,
       visual_format: metadata.visualFormat ?? 'uncertain',
       review_status: metadata.visualFormat === 'single' ? 'available' : 'pending',
-      classification_note: metadata.visualFormat === 'single' ? '人工确认为单图' : '',
+      classification_note: metadata.classificationNote
+        ? `${metadata.classificationNote}（第 ${fileIndex + 1} 张）`
+        : metadata.visualFormat === 'single' ? '人工确认为单图' : '',
       content_type: metadata.contentType ?? 'other',
       characters: metadata.characters ?? [],
       chapter_label: metadata.chapter,

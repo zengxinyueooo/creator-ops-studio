@@ -59,7 +59,7 @@ interface WorkspaceContextValue {
   updateReferenceReview: (referenceId: string, status: ReferenceItem['reviewStatus']) => Promise<void>
   captureReferenceAssets: (referenceId: string) => Promise<{ imageCount: number }>
   createTopicFromReferences: (input: Pick<Topic, 'title' | 'subtitle' | 'pillar' | 'comicId'>, referenceIds: string[]) => Promise<void>
-  uploadAssets: (files: File[], metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; comicId?: string; topicId?: string; sourceReferenceId?: string; sourceNoteId?: string; sourceNoteTags?: string[]; visualFormat?: AssetVisualFormat; contentType?: AssetContentType; characters?: string[] }) => Promise<void>
+  uploadAssets: (files: File[], metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; comicId?: string; topicId?: string; sourceReferenceId?: string; sourceNoteId?: string; sourceNoteTags?: string[]; visualFormat?: AssetVisualFormat; contentType?: AssetContentType; characters?: string[]; classificationNote?: string }) => Promise<void>
   reviewAsset: (assetId: string, visualFormat: AssetVisualFormat, reviewStatus: AssetReviewStatus) => Promise<void>
   toggleTopicAsset: (topicId: string, assetId: string) => Promise<void>
   markTopicPublished: (topicId: string) => Promise<void>
@@ -545,6 +545,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         tags: [],
         comicId: reference.comicId,
         visualFormat: 'uncertain' as const,
+        classificationNote: '已从参考笔记采集，待人工确认图型与内容标签',
         contentType: 'other' as const,
         characters: [],
       }
@@ -574,7 +575,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             previewUrl: URL.createObjectURL(file),
             topicIds: [],
             visualFormat: 'uncertain',
-            classificationNote: `第 ${fileIndex + 1} 张 · 自动采集，待确认是否为单张连续画面`,
+            classificationNote: `第 ${fileIndex + 1} 张 · 已从参考笔记采集，待人工确认图型与内容标签`,
             reviewStatus: 'pending',
             contentType: 'other',
             characters: [],
