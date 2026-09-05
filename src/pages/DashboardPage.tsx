@@ -94,9 +94,9 @@ export function DashboardPage() {
           <div className="featured-assets-grid">
             {accountAssets.slice(0, 4).map((asset, index) => (
               <Link className="featured-asset-card" to="/assets" key={asset.id}>
-                <div className={`feature-cover small ${COVER_TONES[index % COVER_TONES.length]}`}><FileImage size={22} /></div>
-                <h3>{asset.originalName}</h3>
-                <p>{asset.workName} · {asset.usageCount ? `已使用 ${asset.usageCount} 次` : '尚未使用'}</p>
+                <div className={`feature-cover small ${COVER_TONES[index % COVER_TONES.length]}`}>{asset.previewUrl ? <img src={asset.previewUrl} alt={asset.originalName} loading="lazy" /> : <FileImage size={22} />}</div>
+                <h3>{[asset.workName, asset.chapter].filter(Boolean).join(' · ') || asset.originalName}</h3>
+                <p>{asset.usageCount ? `已使用 ${asset.usageCount} 次` : '尚未使用'}{asset.tags[0] ? ` · #${asset.tags[0]}` : ''}</p>
               </Link>
             ))}
           </div>
