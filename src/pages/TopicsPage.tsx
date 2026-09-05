@@ -1,4 +1,4 @@
-import { CheckCircle2, FileImage, Plus, SlidersHorizontal, XCircle } from 'lucide-react'
+import { CheckCircle2, Compass, FileImage, Heart, ListOrdered, Plus, ShieldAlert, SlidersHorizontal, XCircle, Zap } from 'lucide-react'
 import { useState } from 'react'
 import { TopicCard } from '../components/TopicCard'
 import { statusMeta } from '../data/status'
@@ -44,9 +44,24 @@ export function TopicsPage() {
       {selectedBrief?.brief && <section className="brief-panel panel">
         <div className="brief-panel-heading"><div><span className="eyebrow">XIAOHONGSHU CONTENT BRIEF</span><h2>{selectedBrief.title}</h2><p>{selectedBrief.subtitle}</p></div><span className={`status-badge ${selectedBrief.brief.status === 'approved' ? 'green' : selectedBrief.brief.status === 'rejected' ? 'gray' : 'amber'}`}>{selectedBrief.brief.status === 'approved' ? 'Brief 已通过' : selectedBrief.brief.status === 'rejected' ? '已放弃' : '待你审核'}</span></div>
         <div className="brief-grid">
-          <div className="brief-focus"><label>内容角度</label><strong>{selectedBrief.brief.angle}</strong><label>核心情绪</label><p>{selectedBrief.brief.coreEmotion}</p><label>开头 Hook</label><blockquote>{selectedBrief.brief.hook}</blockquote></div>
-          <div><label>文案结构</label><ol>{selectedBrief.brief.structure.map((item) => <li key={item}>{item}</li>)}</ol></div>
-          <div><label>建议素材</label><ul>{selectedBrief.brief.assetGuidance.map((item) => <li key={item}><FileImage size={13} />{item}</li>)}</ul><label>避免事项</label><ul>{selectedBrief.brief.avoidances.map((item) => <li key={item}>{item}</li>)}</ul></div>
+          <div className="brief-zone tint-pink">
+            <span className="section-tag pink"><Compass size={12} />内容角度</span>
+            <p className="brief-angle">{selectedBrief.brief.angle}</p>
+            <span className="section-tag rose"><Heart size={12} />核心情绪</span>
+            <div className="chip-row">{selectedBrief.brief.coreEmotion.split(/[，,、]/).filter(Boolean).map((emotion) => <span key={emotion}>{emotion}</span>)}</div>
+            <span className="section-tag violet"><Zap size={12} />开头 Hook</span>
+            <blockquote>{selectedBrief.brief.hook}</blockquote>
+          </div>
+          <div className="brief-zone tint-violet">
+            <span className="section-tag violet"><ListOrdered size={12} />文案结构</span>
+            <ol className="brief-steps">{selectedBrief.brief.structure.map((item, index) => <li key={item}><b>{index + 1}</b><span>{item}</span></li>)}</ol>
+          </div>
+          <div className="brief-zone tint-blue">
+            <span className="section-tag blue"><FileImage size={12} />建议素材</span>
+            <ul className="brief-cards">{selectedBrief.brief.assetGuidance.map((item) => <li key={item}><FileImage size={14} />{item}</li>)}</ul>
+            <span className="section-tag amber"><ShieldAlert size={12} />避免事项</span>
+            <ul className="avoid-list">{selectedBrief.brief.avoidances.map((item) => <li key={item}><XCircle size={13} />{item}</li>)}</ul>
+          </div>
         </div>
         {briefError && <p className="research-error">{briefError}</p>}
         <div className="brief-actions"><span>参考笔记 {selectedBrief.referenceCount} 条 · 通过后进入素材筛选</span><div className="button-row"><button className="secondary-button" onClick={() => void setTopicBriefStatus(selectedBrief.id, 'rejected').catch((error) => setBriefError(error.message))}><XCircle size={15} />放弃</button><button className="primary-button" onClick={() => void setTopicBriefStatus(selectedBrief.id, 'approved').catch((error) => setBriefError(error.message))}><CheckCircle2 size={15} />通过 Brief</button></div></div>

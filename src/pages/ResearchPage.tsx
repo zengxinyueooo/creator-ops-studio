@@ -1,4 +1,4 @@
-import { BookOpenCheck, Check, Clipboard, ExternalLink, ImageDown, Import, Layers3, LoaderCircle, Play, Plus, Search, ShieldCheck, TerminalSquare, X } from 'lucide-react'
+import { BookOpenCheck, Check, Clipboard, ExternalLink, ImageDown, Import, Layers3, Library, LoaderCircle, PenLine, Play, Plus, Search, ShieldCheck, SlidersHorizontal, Sparkles, TerminalSquare, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { searchXiaohongshuBatch } from '../lib/opencliBridge'
 import { useWorkspace } from '../store/WorkspaceContext'
@@ -233,10 +233,25 @@ export function ResearchPage() {
       <section className="integration-banner"><div className="integration-logo"><TerminalSquare size={25} /></div><div><h2>OpenCLI 小红书浏览器调研</h2><p>固定读取图文首屏；连载作品按近一周过滤、结果按点赞排序，并排除已导入工作台的笔记。不自动滚动或发布。</p></div><a href="https://github.com/jackwener/OpenCLI" target="_blank" rel="noreferrer">查看项目 <ExternalLink size={14} /></a></section>
 
       <form className="research-create-form" onSubmit={createTask}>
-        <select value={comicId} onChange={(event) => { setComicId(event.target.value); setKeywordSelection(null); setKeywordText('') }} required><option value="">选择所属漫画</option>{comics.map((comic) => <option key={comic.id} value={comic.id}>{comic.title}</option>)}</select>
-        <div className="research-keyword-picker"><div className="keyword-picker-heading"><strong>建议关键词</strong><span>已选 {selectedKeywords.length}/3</span></div><div className="keyword-options">{suggestedKeywords.map((keyword) => <label key={keyword}><input type="checkbox" checked={selectedKeywords.includes(keyword)} onChange={() => toggleSuggestedKeyword(keyword)} />{keyword}</label>)}</div><input value={keywordText} onChange={(event) => setKeywordText(event.target.value)} placeholder="可选：补充自定义关键词（先取消一个建议词）" maxLength={80} /></div>
-        <input value={purpose} onChange={(event) => setPurpose(event.target.value)} placeholder={isCompletedComic ? '调研目的，例如：寻找高赞名场面的选题角度' : '调研目的，例如：寻找最新话的高赞选题角度'} maxLength={160} />
-        <div className="research-fixed-limit"><strong>10 条</strong><span>{isCompletedComic ? '不限时间 · 去重上限' : '一周内 · 去重上限'}</span></div>
+        <div className="field-group">
+          <span className="field-label"><Library size={13} />所属漫画</span>
+          <select value={comicId} onChange={(event) => { setComicId(event.target.value); setKeywordSelection(null); setKeywordText('') }} required><option value="">选择所属漫画</option>{comics.map((comic) => <option key={comic.id} value={comic.id}>{comic.title}</option>)}</select>
+        </div>
+        <div className="field-group">
+          <span className="field-label"><PenLine size={13} />调研目的</span>
+          <input value={purpose} onChange={(event) => setPurpose(event.target.value)} placeholder={isCompletedComic ? '例如：寻找高赞名场面的选题角度' : '例如：寻找最新话的高赞选题角度'} maxLength={160} />
+        </div>
+        <div className="field-group">
+          <span className="field-label"><SlidersHorizontal size={13} />抓取规则</span>
+          <div className="research-fixed-limit"><strong>10 条</strong><span>{isCompletedComic ? '不限时间 · 去重上限' : '一周内 · 去重上限'}</span></div>
+        </div>
+        <div className="field-group field-full">
+          <span className="field-label"><Sparkles size={13} />调研关键词<span className="field-hint">已选 {selectedKeywords.length}/3 · 点选建议词，或补充自定义关键词</span></span>
+          <div className="research-keyword-picker">
+            <div className="keyword-options">{suggestedKeywords.map((keyword) => <label key={keyword}><input type="checkbox" checked={selectedKeywords.includes(keyword)} onChange={() => toggleSuggestedKeyword(keyword)} />{keyword}</label>)}</div>
+            <input value={keywordText} onChange={(event) => setKeywordText(event.target.value)} placeholder="补充自定义关键词（最多 3 个；先取消一个建议词，才能再选新的）" maxLength={80} />
+          </div>
+        </div>
         <button className="primary-button" type="submit" disabled={creating}><Plus size={15} />{creating ? '创建中…' : '创建任务'}</button>
       </form>
 
