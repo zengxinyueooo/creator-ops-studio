@@ -315,10 +315,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const topic = state.topics.find((item) => item.id === topicId)
       if (!topic?.brief) throw new Error('这个选题还没有可审核的 Brief')
       const brief = { ...topic.brief, status }
-      if (dataMode === 'supabase') await updateCloudTopicBrief(topicId, brief)
+      // A brief approval is a workflow decision, not only a label on the brief.
+      // Move the topic to its next actionable stage at the same time so the
+      // dashboard, kanban, and asset picker all agree on its current state.
+      const nextTopicStatus: TopicStatus = status === 'approved'
+        ? 'materials'
+        : status === 'rejected'
+          ? 'research'
+          : topic.status
+      if (dataMode === 'supabase') {
+        await updateCloudTopicBrief(topicId, brief)
+        if (nextTopicStatus !== topic.status) await updateCloudTopicStatus(topicId, nextTopicStatus)
+      }
       setState((current) => ({
         ...current,
-        topics: current.topics.map((item) => item.id === topicId ? { ...item, brief, updatedAt: '刚刚' } : item),
+        topics: current.topics.map((item) => item.id === topicId ? { ...item, brief, status: nextTopicStatus, updatedAt: '刚刚' } : item),
       }))
     },
     addTopic: (input) => {
