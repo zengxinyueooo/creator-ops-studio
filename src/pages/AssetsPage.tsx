@@ -157,7 +157,7 @@ export function AssetsPage() {
     <>
       <section className="page-heading compact-heading"><div><span className="eyebrow">ASSET REVIEW</span><h1>素材筛选台</h1><p>图片采集后先由你确认图型和内容标签；只有确认的单图可以进入 Brief，已用素材仍可复用并展示使用历史。</p></div><button className="primary-button" onClick={() => setShowUpload((value) => !value)}>{showUpload ? <X size={17} /> : <Upload size={17} />}{showUpload ? '关闭' : '上传素材'}</button></section>
 
-      <section className="asset-brief-bar panel">
+      <section className="asset-brief-bar panel tint-sky">
         <div><label>当前内容 Brief</label><PillSelect value={selectedTopicId} ariaLabel="当前内容 Brief" placeholder="选择 Brief" options={[{ value: '', label: '选择 Brief' }, ...briefTopics.map((topic) => ({ value: topic.id, label: topic.title }))]} onChange={selectBrief} /></div>
         <div className="asset-brief-stat"><strong>{selectedCount}</strong><span>已选素材</span></div>
         <div className="asset-brief-stat"><strong>{eligibleCount}</strong><span>可用单图</span></div>
@@ -165,7 +165,7 @@ export function AssetsPage() {
         <span className={`status-badge ${selectedTopic?.brief?.status === 'approved' ? 'green' : 'amber'}`}>{selectedTopic?.brief?.status === 'approved' ? 'Brief 已通过' : '请选择已通过的 Brief'}</span>
       </section>
 
-      {showUpload && <form className="asset-upload-panel" onSubmit={submitUpload}>
+      {showUpload && <form className="asset-upload-panel tint-peach" onSubmit={submitUpload}>
         <div className="asset-dropzone" onClick={() => fileInput.current?.click()}><input ref={fileInput} hidden type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onChange={(event) => setFiles([...(event.target.files ?? [])].slice(0, 10))} /><Upload size={24} /><strong>{files.length ? `已选择 ${files.length} 张图片` : '点击选择图片'}</strong><span>参考笔记采集会写入来源信息；图型与内容标签仍由你确认</span></div>
         <div className="asset-fields">
           <div className="field"><span>所属漫画</span><PillSelect value={comicId} ariaLabel="所属漫画" placeholder="选择漫画" options={[{ value: '', label: '选择漫画' }, ...comics.map((comic) => ({ value: comic.id, label: comic.title }))]} onChange={(nextId) => { setManualComicId(nextId); const comic = comics.find((item) => item.id === nextId); if (comic) setWorkName(comic.title) }} /></div>

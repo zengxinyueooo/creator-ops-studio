@@ -1,4 +1,4 @@
-import { BookOpenCheck, Check, Clipboard, Compass, ExternalLink, ImageDown, Import, Layers3, Library, LoaderCircle, PenLine, Play, Plus, Search, ShieldCheck, SlidersHorizontal, Sparkles, TerminalSquare, X } from 'lucide-react'
+import { BookOpenCheck, Check, ChevronDown, ChevronRight, Clipboard, Compass, ExternalLink, ImageDown, Import, Layers3, Library, LoaderCircle, PenLine, Play, Plus, Search, ShieldCheck, SlidersHorizontal, Sparkles, TerminalSquare, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { searchXiaohongshuBatch } from '../lib/opencliBridge'
 import { PillSelect } from '../components/PillSelect'
@@ -36,6 +36,7 @@ export function ResearchPage() {
   const [runningTaskId, setRunningTaskId] = useState<string | null>(null)
   const [importingTaskId, setImportingTaskId] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
+  const [showImported, setShowImported] = useState(false)
   const [previews, setPreviews] = useState<Record<string, XhsResearchResult[]>>({})
   const [selected, setSelected] = useState<Record<string, string[]>>({})
   const [referenceFilter, setReferenceFilter] = useState<ReferenceFilter>('all')
@@ -51,6 +52,8 @@ export function ResearchPage() {
   const [error, setError] = useState('')
   const selectedKeywords = keywordSelection ?? suggestedKeywords
   const tasks = state.researchTasks.filter((task) => task.accountId === activeAccount.id && task.comicId && validComicIds.has(task.comicId))
+  const pendingTasks = tasks.filter((task) => task.status !== 'imported')
+  const importedTasks = tasks.filter((task) => task.status === 'imported')
   const selectedReferences = references.filter((reference) => selectedReferenceIds.includes(reference.id))
   const selectionComicId = selectedReferences[0]?.comicId
   const visibleReferences = references.filter((reference) => {
@@ -232,6 +235,16 @@ export function ResearchPage() {
     }
   }
 
+  function renderTask(task: (typeof tasks)[number], imported = false) {
+    const results = previews[task.id] ?? task.results ?? []
+    const selectedUrls = new Set(selected[task.id] ?? [])
+    const taskComic = comics.find((comic) => comic.id === task.comicId)
+    return <article className={`research-task research-task-card ${imported ? 'is-imported' : ''}`} key={task.id}>
+              <div className="research-task-summary"><div><span className={`status-badge ${task.status === 'imported' ? 'green' : 'blue'}`}>{task.status === 'imported' ? '已导入' : '待执行'}</span>{taskComic && <span className="research-comic-label">《{taskComic.title}》</span>}<div className="keyword-tags">{task.keywords.map((keyword) => <span key={keyword}>{keyword}</span>)}</div>{task.purpose ? <p className="task-purpose"><Compass size={13} />{task.purpose}</p> : <span className="purpose-hint">待补充调研目的</span>}<div className="research-filter-row"><span>图文</span>{task.filters.publishedWithin !== 'all' && <span>近一周</span>}<span>工作台未导入</span><span>按点赞排序</span></div><div className="task-meta-row"><span>跨词去重</span><span>上限 {task.limit} 条</span>{task.lastRunAt ? <span>最近查询 {task.lastRunAt}</span> : <span>创建于 {task.createdAt}</span>}</div></div><div className="task-actions"><button className="secondary-button" type="button" onClick={() => copyKeywords(task.id, task.keywords)}>{copied === task.id ? <Check size={16} /> : <Clipboard size={16} />}{copied === task.id ? '已复制' : '复制关键词'}</button>{task.status !== 'imported' && <button className="primary-button" type="button" onClick={() => runTask(task.id, task.comicId, task.keywords, task.limit, task.filters.publishedWithin)} disabled={runningTaskId === task.id}>{runningTaskId === task.id ? <LoaderCircle className="spin" size={16} /> : <Play size={16} />}{runningTaskId === task.id ? '筛选查询中…' : results.length ? '重新查询' : '本机执行'}</button>}</div></div>
+              {task.status !== 'imported' && results.length > 0 && <div className="research-preview"><div className="research-preview-heading"><strong>查询结果</strong><span>已选择 {selectedUrls.size}/{results.length} 条</span></div>{results.map((result) => <div className="research-result" key={result.url}><input aria-label={`选择 ${result.title}`} type="checkbox" checked={selectedUrls.has(result.url)} onChange={() => toggleResult(task.id, result.url)} /><span className="result-rank">{result.rank}</span><span><strong>{result.title}</strong><small>{result.matchedKeyword && <b className="result-keyword">{result.matchedKeyword}</b>}{result.author} · {result.likes.toLocaleString()} 赞{result.publishedAt ? ` · ${result.publishedAt}` : ''}</small></span><a aria-label={`打开 ${result.title}`} href={result.url} target="_blank" rel="noreferrer"><ExternalLink size={14} /></a></div>)}<button className="primary-button import-confirm" type="button" disabled={importingTaskId === task.id || selectedUrls.size === 0} onClick={() => confirmImport(task.id)}><Import size={15} />{importingTaskId === task.id ? '正在导入…' : `确认导入 ${selectedUrls.size} 条`}</button></div>}
+            </article>
+  }
+
   return (
     <>
       <section className="page-heading compact-heading"><div><span className="eyebrow">RESEARCH INBOX</span><h1>调研导入箱</h1><p>按漫画检索笔记，人工审核后沉淀为选题；搜索、导入和转选题都不会自动发布。</p></div><span className="safe-label"><ShieldCheck size={15} />只读搜索 · 人工审核</span></section>
@@ -264,22 +277,17 @@ export function ResearchPage() {
       {message && <p className="research-success">{message}</p>}
 
       <section className="research-layout">
-        <div className="panel">
-          <div className="panel-heading"><div><h2>调研任务</h2><p>运行后先预览，再选择需要写入候选库的笔记</p></div><span className="count-chip">{tasks.filter((task) => task.status === 'queued').length} 个待执行</span></div>
-          <div className="task-list">{tasks.length ? tasks.map((task) => {
-            const results = previews[task.id] ?? task.results ?? []
-            const selectedUrls = new Set(selected[task.id] ?? [])
-            const taskComic = comics.find((comic) => comic.id === task.comicId)
-            return <article className="research-task research-task-card" key={task.id}>
-              <div className="research-task-summary"><div><span className={`status-badge ${task.status === 'imported' ? 'green' : 'blue'}`}>{task.status === 'imported' ? '已导入' : '待执行'}</span>{taskComic && <span className="research-comic-label">《{taskComic.title}》</span>}<div className="keyword-tags">{task.keywords.map((keyword) => <span key={keyword}>{keyword}</span>)}</div>{task.purpose ? <p className="task-purpose"><Compass size={13} />{task.purpose}</p> : <span className="purpose-hint">待补充调研目的</span>}<div className="research-filter-row"><span>图文</span>{task.filters.publishedWithin !== 'all' && <span>近一周</span>}<span>工作台未导入</span><span>按点赞排序</span></div><div className="task-meta-row"><span>跨词去重</span><span>上限 {task.limit} 条</span>{task.lastRunAt ? <span>最近查询 {task.lastRunAt}</span> : <span>创建于 {task.createdAt}</span>}</div></div><div className="task-actions"><button className="secondary-button" type="button" onClick={() => copyKeywords(task.id, task.keywords)}>{copied === task.id ? <Check size={16} /> : <Clipboard size={16} />}{copied === task.id ? '已复制' : '复制关键词'}</button>{task.status !== 'imported' && <button className="primary-button" type="button" onClick={() => runTask(task.id, task.comicId, task.keywords, task.limit, task.filters.publishedWithin)} disabled={runningTaskId === task.id}>{runningTaskId === task.id ? <LoaderCircle className="spin" size={16} /> : <Play size={16} />}{runningTaskId === task.id ? '筛选查询中…' : results.length ? '重新查询' : '本机执行'}</button>}</div></div>
-              {task.status !== 'imported' && results.length > 0 && <div className="research-preview"><div className="research-preview-heading"><strong>查询结果</strong><span>已选择 {selectedUrls.size}/{results.length} 条</span></div>{results.map((result) => <div className="research-result" key={result.url}><input aria-label={`选择 ${result.title}`} type="checkbox" checked={selectedUrls.has(result.url)} onChange={() => toggleResult(task.id, result.url)} /><span className="result-rank">{result.rank}</span><span><strong>{result.title}</strong><small>{result.matchedKeyword && <b className="result-keyword">{result.matchedKeyword}</b>}{result.author} · {result.likes.toLocaleString()} 赞{result.publishedAt ? ` · ${result.publishedAt}` : ''}</small></span><a aria-label={`打开 ${result.title}`} href={result.url} target="_blank" rel="noreferrer"><ExternalLink size={14} /></a></div>)}<button className="primary-button import-confirm" type="button" disabled={importingTaskId === task.id || selectedUrls.size === 0} onClick={() => confirmImport(task.id)}><Import size={15} />{importingTaskId === task.id ? '正在导入…' : `确认导入 ${selectedUrls.size} 条`}</button></div>}
-            </article>
-          }) : <div className="empty-state tall">当前账号暂无调研任务。</div>}</div>
+        <div className="panel tint-sky">
+          <div className="panel-heading"><div><h2>调研任务</h2><p>运行后先预览，再选择需要写入候选库的笔记</p></div><span className="count-chip">{pendingTasks.length} 个待执行</span></div>
+          <div className="task-list">{tasks.length ? <>
+            {pendingTasks.map((task) => renderTask(task))}
+            {importedTasks.length > 0 && <div className="imported-section"><button className="imported-toggle" type="button" onClick={() => setShowImported((value) => !value)}>{showImported ? <ChevronDown size={15} /> : <ChevronRight size={15} />}<span>已导入任务 · {importedTasks.length}</span><small>{showImported ? '收起' : '展开查看'}</small></button>{showImported && importedTasks.map((task) => renderTask(task, true))}</div>}
+          </> : <div className="empty-state tall">当前账号暂无调研任务。</div>}</div>
         </div>
         <aside className="panel policy-panel"><span className="section-tag green"><ShieldCheck size={12} />安全边界</span><ul><li><Check size={15} />仅在你主动点击时执行</li><li><Check size={15} />每个关键词必须包含漫画名</li><li><Check size={15} />每个关键词只读取首屏</li><li><Check size={15} />跨关键词最多保留 10 条</li><li><Check size={15} />写入候选库前必须人工勾选</li></ul><div className="warning-note">如果小红书出现验证或异常提示，任务会停止且不会自动重试。Cloudflare 版本仍需由本机伴随服务执行浏览器步骤。</div></aside>
       </section>
 
-      <section className="panel reference-library">
+      <section className="panel tint-lilac reference-library">
         <div className="panel-heading"><div><h2>参考笔记库</h2><p>你确认导入的笔记已直接保留；可采集完整正文与素材，再选择同一部漫画的 1–多条笔记创建选题草案。</p></div><span className="count-chip">{references.length} 条笔记</span></div>
         <div className="reference-toolbar"><label className="reference-search"><Search size={15} /><input value={referenceQuery} onChange={(event) => setReferenceQuery(event.target.value)} placeholder="搜索标题、作者或漫画" /></label><div className="reference-filter-tabs">{(['all', 'candidate', 'kept', 'rejected'] as ReferenceFilter[]).map((filter) => <button type="button" className={referenceFilter === filter ? 'active' : ''} onClick={() => setReferenceFilter(filter)} key={filter}>{filter === 'all' ? '全部' : reviewLabels[filter].label}</button>)}</div></div>
 
