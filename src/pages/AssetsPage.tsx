@@ -155,7 +155,7 @@ export function AssetsPage() {
 
   return (
     <>
-      <section className="page-heading compact-heading"><div><span className="eyebrow">ASSET REVIEW</span><h1>素材筛选台</h1><p>识别结果先审核；只有单图可以进入 Brief，已用素材仍可复用但会展示使用历史。</p></div><button className="primary-button" onClick={() => setShowUpload((value) => !value)}>{showUpload ? <X size={17} /> : <Upload size={17} />}{showUpload ? '关闭' : '上传素材'}</button></section>
+      <section className="page-heading compact-heading"><div><span className="eyebrow">ASSET REVIEW</span><h1>素材筛选台</h1><p>图片采集后先由你确认图型和内容标签；只有确认的单图可以进入 Brief，已用素材仍可复用并展示使用历史。</p></div><button className="primary-button" onClick={() => setShowUpload((value) => !value)}>{showUpload ? <X size={17} /> : <Upload size={17} />}{showUpload ? '关闭' : '上传素材'}</button></section>
 
       <section className="asset-brief-bar panel">
         <div><label>当前内容 Brief</label><PillSelect value={selectedTopicId} ariaLabel="当前内容 Brief" placeholder="选择 Brief" options={[{ value: '', label: '选择 Brief' }, ...briefTopics.map((topic) => ({ value: topic.id, label: topic.title }))]} onChange={selectBrief} /></div>
@@ -166,7 +166,7 @@ export function AssetsPage() {
       </section>
 
       {showUpload && <form className="asset-upload-panel" onSubmit={submitUpload}>
-        <div className="asset-dropzone" onClick={() => fileInput.current?.click()}><input ref={fileInput} hidden type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onChange={(event) => setFiles([...(event.target.files ?? [])].slice(0, 10))} /><Upload size={24} /><strong>{files.length ? `已选择 ${files.length} 张图片` : '点击选择图片'}</strong><span>采集 Workflow 会写入识别结果；手动上传时可在下方确认</span></div>
+        <div className="asset-dropzone" onClick={() => fileInput.current?.click()}><input ref={fileInput} hidden type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onChange={(event) => setFiles([...(event.target.files ?? [])].slice(0, 10))} /><Upload size={24} /><strong>{files.length ? `已选择 ${files.length} 张图片` : '点击选择图片'}</strong><span>参考笔记采集会写入来源信息；图型与内容标签仍由你确认</span></div>
         <div className="asset-fields">
           <div className="field"><span>所属漫画</span><PillSelect value={comicId} ariaLabel="所属漫画" placeholder="选择漫画" options={[{ value: '', label: '选择漫画' }, ...comics.map((comic) => ({ value: comic.id, label: comic.title }))]} onChange={(nextId) => { setManualComicId(nextId); const comic = comics.find((item) => item.id === nextId); if (comic) setWorkName(comic.title) }} /></div>
           <label>作品名称<input value={workName} onChange={(event) => setWorkName(event.target.value)} placeholder="例如：溯洄春时" /></label>
@@ -194,9 +194,9 @@ export function AssetsPage() {
           <div className="asset-card-copy">
             <div className="asset-badge-row"><span className={`status-badge ${asset.visualFormat === 'single' ? 'green' : asset.visualFormat === 'uncertain' ? 'amber' : 'gray'}`}>{visualLabels[asset.visualFormat]}</span><span className="asset-type-chip">{contentTypeLabels[asset.contentType]}</span></div>
             <h3>{[asset.workName, asset.chapter].filter(Boolean).join(' · ') || asset.originalName}</h3>
-            <div className="asset-people-row">{asset.characters.length ? asset.characters.map((character) => <span className="character-chip" key={character}>{character}</span>) : <span className="character-chip empty">角色待标注</span>}<span className="copyright-chip">{copyrightLabels[asset.copyrightStatus]}</span></div>
+            <div className="asset-people-row">{asset.characters.length ? asset.characters.map((character) => <span className="character-chip" key={character}>{character}</span>) : <span className="character-chip empty">角色待确认</span>}<span className="copyright-chip">{copyrightLabels[asset.copyrightStatus]}</span></div>
             {asset.tags.length > 0 && <div className="asset-tags" aria-label="素材标签">{[...new Set(asset.tags)].slice(0, 4).map((tag) => <button className={query.trim() === tag ? 'active' : ''} type="button" key={tag} onClick={() => setQuery(tag)} aria-label={`按标签 ${tag} 筛选`}>#{tag}</button>)}</div>}
-            <p className="classification-note"><ScanSearch size={13} />{asset.classificationNote || '等待图片识别 Workflow 返回结果'}</p>
+            <p className="classification-note"><ScanSearch size={13} />{asset.classificationNote || '图片已入库，待你确认图型与内容标签'}</p>
             <div className="usage-line"><span><RefreshCw size={12} />使用 {asset.usageCount} 次{asset.lastUsedAt ? ` · 最近 ${asset.lastUsedAt}` : ''}</span>{asset.coverUsageCount > 0 && <span>封面 {asset.coverUsageCount} 次</span>}</div>
             {asset.visualFormat === 'uncertain' && <div className="asset-review-actions"><button disabled={busyAssetId === asset.id} onClick={() => void changeClassification(asset.id, 'single')}><Check size={13} />确认单图</button><button disabled={busyAssetId === asset.id} onClick={() => void changeClassification(asset.id, 'collage')}><ImageOff size={13} />标为拼图</button></div>}
             <button className={`asset-select-button ${selected ? 'selected' : ''}`} disabled={!selectable || busyAssetId === asset.id || !selectedTopicId} onClick={() => void toggleSelection(asset.id)}>{selected ? <Check size={15} /> : <Layers3 size={15} />}{selected ? '已加入当前 Brief' : selectable ? '加入当前 Brief' : '不可选'}</button>
