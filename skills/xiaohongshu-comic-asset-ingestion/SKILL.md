@@ -1,6 +1,6 @@
 ---
 name: xiaohongshu-comic-asset-ingestion
-description: Ingest all images from one user-selected Xiaohongshu note into this repository's Supabase-backed manga asset library. Use after the user has selected a specific note and comic; do not use for broad topic research or publishing.
+description: Store all valid images from one user-selected, already captured Xiaohongshu note in this repository's Supabase-backed manga asset library with source traceability. Use only after the user has kept a note and explicitly started capture. Do not use for broad topic research, automatic image judgment, topic creation, Brief generation, or publishing.
 ---
 
 # Xiaohongshu Comic Asset Ingestion
@@ -9,7 +9,9 @@ Turn one reviewed Xiaohongshu note into reusable, traceable reference assets for
 
 ## Required scope
 
-Confirm or infer only these inputs:
+This is the storage part of `xiaohongshu-comic-note-capture`. Run it only after the user clicks to capture one kept note, its detail metadata has been collected, and its target comic is known.
+
+Confirm only these inputs:
 
 - A user-selected Xiaohongshu note URL or short link, and its target comic.
 - The active account and the matching comic record in the workspace.
@@ -19,19 +21,29 @@ Do not expand to a creator profile, a search-result batch, or another note unles
 
 ## Collect the note safely
 
-Use the OpenCLI Xiaohongshu adapter, not hand-written requests to Xiaohongshu. Load `opencli-usage` before starting an OpenCLI session and prefer its `note` and `download` commands.
+Use the OpenCLI Xiaohongshu adapter, not hand-written requests to Xiaohongshu. Load `opencli-usage` before starting an OpenCLI session and use the capture record's media list with the adapter's `download` command.
 
 - Check `opencli doctor` first.
-- Use a full signed note URL or supported short link.
-- Retrieve the note details once, then download its media once to a local ignored temporary directory such as `.tmp/asset-ingestion/<note-id>/`.
+- Use the captured note ID and media list; do not retrieve note details again.
+- Download its media once to a local ignored temporary directory such as `.tmp/asset-ingestion/<note-id>/`.
 - Keep the note ID, title, author, original source URL, topic hashtags, and downloaded image order. A signed URL may expire, so the note ID is the durable deduplication key.
 - Keep activity read-only: do not like, save, follow, comment, publish, or repeatedly reload the note.
 
-## Classify before writing
+## Store first; review separately
 
-Inspect each downloaded image individually. Store valid images without resizing or recompressing them.
+Inspect only enough to reject corrupt or non-image files. Store valid image bytes without resizing or recompressing them.
 
-Assign the smallest useful metadata set:
+Do not claim that an unconfigured background vision workflow has classified an image. Unless a separately configured visual model has actually returned a result, create each asset with:
+
+- `visual_format: uncertain`
+- `review_status: pending`
+- `content_type: other`
+- `classification_note`: `已从参考笔记采集，待人工确认图型与内容标签（第 N 张）`
+- no semantic tags and no inferred character names
+
+The user reviews format and tags in the material-review page. An explicit human click may then mark a single image `available` or a collage `rejected` while retaining both in the asset library.
+
+If a configured visual-classification call is explicitly requested and succeeds, it may prefill the following smallest useful metadata set, but its result remains reviewable:
 
 - `visual_format`: `single`, `collage`, `uncertain`, or `invalid`.
 - `review_status`: `available` for a confirmed `single`; `rejected` for `collage` or `invalid`; `pending` for `uncertain`.
@@ -50,9 +62,9 @@ Every stored asset must include:
 - Account ID, comic ID, original filename, MIME type, byte size, storage path.
 - `source_type: xiaohongshu`, original source URL, and stable `sourceNoteId` in `custom_fields` when the importer supports it.
 - `copyrightStatus: reference_only` in `custom_fields` unless the user supplies stronger rights information.
-- Work name, a note-title-derived chapter/segment label, source-note image order, and semantic content tags.
+- Work name, a note-title-derived chapter/segment label, source-note image order, and any confirmed semantic content tags.
 
-Use at most three semantic tags per image, with at most one from each group when possible:
+When classification has actually occurred, use at most three semantic tags per image, with at most one from each group when possible:
 
 - Emotion: `甜`, `暧昧`, `心动`, `治愈`, `轻松`, `紧张`, `虐心`, `悬念`, `反差萌`.
 - Relationship or story beat: `对视`, `承诺`, `守护`, `吃醋`, `信任危机`, `关系推进`, `设定揭秘`.
@@ -68,12 +80,12 @@ After upload:
 
 1. Confirm the number of stored assets equals the valid downloaded-image count, accounting for deduplicated items.
 2. Reload the asset page and ensure each asset has a working signed preview.
-3. Confirm stored collage images fill their card normally and that clicking any preview opens the full original image.
-4. Report the total, available single-image count, retained collage/uncertain count, and any skipped files or uncertain classifications.
+3. Confirm each preview opens the full original image.
+4. Report the total, pending-review count, retained collage count (if manually or model-confirmed), and any skipped files.
 
 ## Boundaries
 
 - Source images are references only. Do not present them as original work, and do not bypass the user's manual publishing review.
 - Do not store an image if it is corrupted, non-image media, or outside the selected note's media list; explain the omission.
 - Do not expose Supabase access tokens, long-lived storage credentials, or the user's Xiaohongshu credentials.
-- Improve this skill only from repeated workflow evidence. Keep it limited to single-note manga asset ingestion.
+- Improve this skill only from repeated workflow evidence. Keep it limited to single-note manga asset storage.
