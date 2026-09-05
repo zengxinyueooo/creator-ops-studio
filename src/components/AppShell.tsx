@@ -11,11 +11,12 @@ import {
   LayoutDashboard,
   LogOut,
   PanelLeftClose,
+  Pencil,
   Search,
   Sparkles,
 } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type FormEvent } from 'react'
 import { dataMode } from '../lib/supabase'
 import { useWorkspace } from '../store/WorkspaceContext'
 import { useAuth } from '../auth/AuthContext'
@@ -32,6 +33,7 @@ const navigation = [
 ]
 
 const AVATAR_SIZE = 96
+const ACCENT_PRESETS = ['#ff5a5f', '#ff8a3d', '#e0339b', '#8a5cff', '#2f9bff', '#00b884']
 
 function avatarStorageKey(accountId: string) {
   return `creator-ops-avatar:${accountId}`
@@ -67,16 +69,14 @@ function readAvatarDataUrl(file: File) {
 }
 
 export function AppShell() {
-  const { state, activeAccount, setActiveAccount } = useWorkspace()
+  const { state, activeAccount, setActiveAccount, updateAccount } = useWorkspace()
   const { user, signOut } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
-  const [avatarSrc, setAvatarSrc] = useState(() => localStorage.getItem(avatarStorageKey(activeAccount.id)))
+  const [editOpen, setEditOpen] = useState(false)
+  const [avatarCache, setAvatarCache] = useState<Record<string, string | null>>({})
+  const avatarSrc = avatarCache[activeAccount.id] ?? localStorage.getItem(avatarStorageKey(activeAccount.id))
   const menuRef = useRef<HTMLDivElement>(null)
   const avatarInputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    setAvatarSrc(localStorage.getItem(avatarStorageKey(activeAccount.id)))
-  }, [activeAccount.id])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -87,6 +87,15 @@ export function AppShell() {
     return () => document.removeEventListener('mousedown', close)
   }, [menuOpen])
 
+  useEffect(() => {
+    if (!editOpen) return
+    const close = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setEditOpen(false)
+    }
+    document.addEventListener('keydown', close)
+    return () => document.removeEventListener('keydown', close)
+  }, [editOpen])
+
   async function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     event.target.value = ''
@@ -94,7 +103,7 @@ export function AppShell() {
     try {
       const dataUrl = await readAvatarDataUrl(file)
       localStorage.setItem(avatarStorageKey(activeAccount.id), dataUrl)
-      setAvatarSrc(dataUrl)
+      setAvatarCache((current) => ({ ...current, [activeAccount.id]: dataUrl }))
     } catch {
       // 图片解析失败时保留原头像
     }
@@ -141,6 +150,11 @@ export function AppShell() {
                     {account.id === activeAccount.id && <Check size={14} />}
                   </button>
                 ))}
+                <div className="account-menu-divider" />
+                <button type="button" className="account-menu-edit" onClick={() => { setMenuOpen(false); setEditOpen(true) }}>
+                  <Pencil size={13} />
+                  <span className="menu-name">编辑账号资料</span>
+                </button>
               </div>
             )}
           </div>
@@ -169,6 +183,63 @@ export function AppShell() {
         </header>
         <div className="page-container"><Outlet /></div>
       </main>
+
+      {editOpen && <AccountEditModal account={activeAccount} onClose={() => setEditOpen(false)} onSave={updateAccount} />}
+    </div>
+  )
+}
+
+function AccountEditModal({ account, onClose, onSave }: {
+  account: ReturnType<typeof useWorkspace>['activeAccount']
+  onClose: () => void
+  onSave: (accountId: string, patch: { name: string; handle: string; positioning: string; accent: string; pillars: string[] }) => Promise<void>
+}) {
+  const [name, setName] = useState(account.name)
+  const [handle, setHandle] = useState(account.handle === '待创建' ? '' : account.handle)
+  const [positioning, setPositioning] = useState(account.positioning)
+  const [pillarText, setPillarText] = useState(account.pillars.join('、'))
+  const [accent, setAccent] = useState(account.accent)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    if (!name.trim()) {
+      setError('账号名称不能为空')
+      return
+    }
+    setSaving(true)
+    setError('')
+    try {
+      await onSave(account.id, {
+        name: name.trim(),
+        handle: handle.trim() || '待创建',
+        positioning: positioning.trim(),
+        accent,
+        pillars: pillarText.split(/[，,、]/).map((item) => item.trim()).filter(Boolean),
+      })
+      onClose()
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '保存失败，请重试')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="编辑账号资料" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <form className="modal-card" onSubmit={submit}>
+        <div className="modal-heading"><div><h2>编辑账号资料</h2><p>保存后立即生效，侧边栏和总览台会同步更新。</p></div><button type="button" className="icon-button" aria-label="关闭" onClick={onClose}>✕</button></div>
+        <div className="modal-fields">
+          <label>账号名称<input value={name} onChange={(event) => setName(event.target.value)} maxLength={30} required /></label>
+          <label>小红书号<input value={handle} onChange={(event) => setHandle(event.target.value)} placeholder="留空显示“待创建”" maxLength={40} /></label>
+          <label className="wide">账号定位<textarea value={positioning} onChange={(event) => setPositioning(event.target.value)} maxLength={120} placeholder="一句话说明这个账号做什么内容" /></label>
+          <label className="wide">内容支柱（用顿号或逗号分隔）<input value={pillarText} onChange={(event) => setPillarText(event.target.value)} placeholder="例如：新番追更、高能片段、完结安利" maxLength={120} /></label>
+          <div className="wide accent-picker"><span>主题色</span><div>{ACCENT_PRESETS.map((color) => <button key={color} type="button" className={accent === color ? 'swatch selected' : 'swatch'} style={{ background: color }} aria-label={`主题色 ${color}`} onClick={() => setAccent(color)}>{accent === color && <Check size={13} color="white" />}</button>)}</div></div>
+        </div>
+        {error && <p className="research-error">{error}</p>}
+        <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>取消</button><button type="submit" className="primary-button" disabled={saving}>{saving ? '保存中…' : '保存'}</button></div>
+      </form>
     </div>
   )
 }

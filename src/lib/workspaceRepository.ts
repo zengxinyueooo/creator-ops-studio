@@ -243,6 +243,39 @@ export async function updateCloudComicStatus(comicId: string, status: ComicStatu
   if (error) throw error
 }
 
+export async function updateCloudAccount(accountId: string, patch: { name: string; handle: string; positioning: string; accent: string; pillars: string[] }) {
+  const { error } = await client().from('accounts').update({
+    name: patch.name,
+    platform_handle: patch.handle,
+    positioning: patch.positioning,
+    accent: patch.accent,
+    pillars: patch.pillars,
+    updated_at: new Date().toISOString(),
+  }).eq('id', accountId)
+  if (error) throw error
+}
+
+export async function createCloudSchedule(
+  userId: string,
+  accountId: string,
+  input: { title: string; kind: 'update' | 'publish' | 'review'; dateLabel: string },
+) {
+  const { data, error } = await client().from('schedules').insert({
+    user_id: userId,
+    account_id: accountId,
+    title: input.title,
+    kind: input.kind,
+    custom_fields: { dateLabel: input.dateLabel },
+  }).select('id, account_id, title, kind').single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteCloudSchedule(scheduleId: string) {
+  const { error } = await client().from('schedules').delete().eq('id', scheduleId)
+  if (error) throw error
+}
+
 export async function createCloudTopic(userId: string, accountId: string, input: Pick<Topic, 'title' | 'subtitle' | 'pillar' | 'comicId'>) {
   const { data, error } = await client().from('topics').insert({
     user_id: userId,

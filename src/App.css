@@ -85,6 +85,37 @@
 .account-menu button:hover { background: #f6f3fb; }
 .account-menu button.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, white); }
 .account-menu .menu-dot { width: 9px; height: 9px; border-radius: 50%; }
+.account-menu-divider { height: 1px; margin: 4px 8px; background: var(--line); }
+.account-menu-edit { color: #75718a; font-size: 11.5px; grid-template-columns: auto 1fr !important; min-height: 32px !important; font-weight: 600; }
+
+/* ---------- 账号资料编辑弹窗 ---------- */
+.modal-overlay { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 24px; background: rgba(24,16,40,.5); backdrop-filter: blur(6px); }
+.modal-card { width: min(480px, 100%); display: flex; flex-direction: column; gap: 16px; padding: 26px; border: 1px solid rgba(255,255,255,.9); border-radius: 24px; background: white; box-shadow: 0 24px 70px rgba(40,20,80,.28); animation: rise-in .3s cubic-bezier(.22, 1, .36, 1) backwards; }
+.modal-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.modal-heading h2 { margin: 0 0 4px; font-size: 18px; font-weight: 700; }
+.modal-heading p { margin: 0; color: #6e6880; font-size: 11.5px; font-weight: 500; }
+.modal-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.modal-fields label { display: flex; flex-direction: column; gap: 6px; color: #5d576e; font-size: 10.5px; font-weight: 700; }
+.modal-fields label.wide, .modal-fields .accent-picker { grid-column: span 2; }
+.modal-fields input, .modal-fields textarea { min-height: 42px; padding: 10px 16px; border: 1.5px solid var(--line); border-radius: 999px; outline: 0; background: #faf8fe; font: inherit; font-size: 12.5px; resize: none; transition: .15s ease; }
+.modal-fields textarea { min-height: 68px; border-radius: 16px; line-height: 1.6; }
+.modal-fields input:focus, .modal-fields textarea:focus { border-color: var(--accent); background: white; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
+.accent-picker { display: flex; flex-direction: column; gap: 8px; color: #5d576e; font-size: 10.5px; font-weight: 700; }
+.accent-picker div { display: flex; gap: 8px; }
+.accent-picker .swatch { width: 30px; height: 30px; display: grid; place-items: center; padding: 0; border: 2px solid transparent; border-radius: 50%; cursor: pointer; transition: .15s ease; }
+.accent-picker .swatch:hover { transform: scale(1.1); }
+.accent-picker .swatch.selected { border-color: #2b2340; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 9px; padding-top: 4px; }
+
+/* ---------- 日历新建表单 / 事件删除 ---------- */
+.calendar-create-form { display: grid; grid-template-columns: 1.6fr .9fr 1fr auto; gap: 9px; align-items: center; margin-bottom: 15px; padding: 13px 14px; }
+.calendar-create-form input, .calendar-create-form select { min-height: 40px; padding: 0 16px; border: 1.5px solid var(--line); border-radius: 999px; outline: 0; background: #faf8fe; font-size: 12px; }
+.calendar-create-form input:focus, .calendar-create-form select:focus { border-color: var(--accent); }
+.calendar-create-form .button-row .secondary-button, .calendar-create-form .button-row .primary-button { min-height: 40px; }
+.event-remove { position: absolute; top: 7px; right: 7px; width: 20px; height: 20px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; color: inherit; background: transparent; opacity: 0; cursor: pointer; transition: .15s ease; }
+.calendar-event { position: relative; }
+.calendar-event:hover .event-remove { opacity: .55; }
+.calendar-event .event-remove:hover { opacity: 1; background: rgba(255,255,255,.7); }
 .sidebar nav { display: flex; flex-direction: column; gap: 5px; }
 .nav-heading { margin: 0 11px 7px; }
 .nav-item { display: flex; gap: 11px; align-items: center; min-height: 42px; padding: 0 14px; border-radius: 999px; color: #6f6884; font-size: 13px; font-weight: 500; transition: .18s ease; }

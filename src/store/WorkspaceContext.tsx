@@ -10,9 +10,11 @@ import {
 } from '../lib/opencliBridge'
 import {
   createCloudComic,
+  createCloudSchedule,
   createCloudTopic,
   createCloudTopicFromReferences,
   createCloudResearchTask,
+  deleteCloudSchedule,
   importCloudResearchResults,
   loadCloudWorkspace,
   markCloudResearchImported,
@@ -21,6 +23,7 @@ import {
   setCloudTopicAsset,
   uploadCloudAssets,
   markCloudTopicPublished,
+  updateCloudAccount,
   updateCloudAssetReview,
   updateCloudComicStatus,
   markCloudReferenceDetailFailed,
@@ -29,7 +32,7 @@ import {
   updateCloudTopicBrief,
   updateCloudTopicStatus,
 } from '../lib/workspaceRepository'
-import type { AssetContentType, AssetItem, AssetReviewStatus, AssetVisualFormat, Comic, ComicStatus, ContentBrief, CopyrightStatus, ReferenceItem, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
+import type { AssetContentType, AssetItem, AssetReviewStatus, AssetVisualFormat, Comic, ComicStatus, ContentBrief, CopyrightStatus, ReferenceItem, ScheduleItem, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
 
 const STORAGE_KEY = 'creator-ops-studio:workspace:v1'
 const CLOUD_CACHE_KEY_PREFIX = 'creator-ops-studio:workspace:cloud-cache:'
@@ -40,6 +43,9 @@ interface WorkspaceContextValue {
   activeAccount: WorkspaceState['accounts'][number]
   accountTopics: Topic[]
   setActiveAccount: (accountId: string) => void
+  updateAccount: (accountId: string, patch: { name: string; handle: string; positioning: string; accent: string; pillars: string[] }) => Promise<void>
+  addSchedule: (input: { title: string; kind: ScheduleItem['kind']; dateLabel: string }) => Promise<void>
+  deleteSchedule: (scheduleId: string) => Promise<void>
   addComic: (input: Pick<Comic, 'title' | 'platform' | 'selectionNote'> & { sourceUrl: string }) => Promise<void>
   updateComicStatus: (comicId: string, status: ComicStatus) => Promise<void>
   updateTopicStatus: (topicId: string, status: TopicStatus) => void
@@ -161,6 +167,54 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setActiveAccount: (accountId) => {
       localStorage.setItem('creator-ops-studio:active-account', accountId)
       setState((current) => ({ ...current, activeAccountId: accountId }))
+    },
+    updateAccount: async (accountId, patch) => {
+      const previous = state
+      setState((current) => ({
+        ...current,
+        accounts: current.accounts.map((account) => account.id === accountId ? { ...account, ...patch } : account),
+      }))
+      if (dataMode === 'supabase' && user) {
+        try {
+          await updateCloudAccount(accountId, patch)
+        } catch (caught) {
+          setState(previous)
+          setError(caught instanceof Error ? caught.message : '账号资料保存失败')
+          throw caught
+        }
+      }
+    },
+    addSchedule: async (input) => {
+      if (dataMode === 'supabase' && user) {
+        try {
+          const row = await createCloudSchedule(user.id, state.activeAccountId, input)
+          setState((current) => ({
+            ...current,
+            schedules: [...current.schedules, { id: row.id, accountId: row.account_id, title: row.title, kind: row.kind, dateLabel: input.dateLabel }],
+          }))
+          return
+        } catch (caught) {
+          setError(caught instanceof Error ? caught.message : '日程创建失败')
+          throw caught
+        }
+      }
+      setState((current) => ({
+        ...current,
+        schedules: [...current.schedules, { id: crypto.randomUUID(), accountId: current.activeAccountId, title: input.title, kind: input.kind, dateLabel: input.dateLabel }],
+      }))
+    },
+    deleteSchedule: async (scheduleId) => {
+      const previous = state
+      setState((current) => ({ ...current, schedules: current.schedules.filter((item) => item.id !== scheduleId) }))
+      if (dataMode === 'supabase') {
+        try {
+          await deleteCloudSchedule(scheduleId)
+        } catch (caught) {
+          setState(previous)
+          setError(caught instanceof Error ? caught.message : '日程删除失败')
+          throw caught
+        }
+      }
     },
     addComic: async (input) => {
       if (dataMode === 'supabase' && user) {
