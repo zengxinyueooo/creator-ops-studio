@@ -40,14 +40,15 @@ export function DashboardPage() {
       </section>
 
       <section className="dashboard-grid">
-        <div className="panel wide-panel">
+        <div className="panel tint-sky wide-panel">
           <div className="panel-heading"><div><h2>热门选题</h2><p>按截止时间与选题分排序</p></div><Link to="/topics">管理选题库 <ArrowRight size={15} /></Link></div>
           <div className="feature-topic-list">
             {accountTopics.slice(0, 3).map((topic, index) => {
               const meta = statusMeta[topic.status]
+              const coverAsset = accountAssets.find((asset) => asset.topicIds.includes(topic.id) && asset.previewUrl)
               return (
                 <Link className="feature-topic-card" to="/topics" key={topic.id}>
-                  <div className={`feature-cover ${COVER_TONES[index % COVER_TONES.length]}`}><Sparkles size={26} /></div>
+                  <div className={`feature-cover ${COVER_TONES[index % COVER_TONES.length]}`}>{coverAsset ? <img src={coverAsset.previewUrl} alt={topic.title} loading="lazy" /> : <><Sparkles size={26} />{topic.tags[0] && <span className="cover-tag">#{topic.tags[0]}</span>}</>}</div>
                   <div className="feature-body">
                     <h3>{topic.title}</h3>
                     <p>{topic.subtitle}</p>
@@ -58,7 +59,7 @@ export function DashboardPage() {
             })}
           </div>
         </div>
-        <div className="panel schedule-panel">
+        <div className="panel tint-lilac schedule-panel">
           <div className="panel-heading"><div><h2>近期日程</h2><p>更新、发布与复盘</p></div><CalendarClock size={19} /></div>
           <div className="schedule-list">
             {accountSchedules.length ? accountSchedules.map((item) => (
@@ -73,7 +74,7 @@ export function DashboardPage() {
         </div>
       </section>
 
-      <section className="panel workflow-panel">
+      <section className="panel tint-peach workflow-panel">
         <div className="panel-heading"><div><h2>内容工作流</h2><p>每一步都保留人工判断</p></div><span className="safe-label">人工审核开启</span></div>
         <div className="workflow-strip">
           {steps.map((step, index) => (
@@ -89,14 +90,14 @@ export function DashboardPage() {
       </section>
 
       {accountAssets.length > 0 && (
-        <section className="panel featured-assets-panel">
+        <section className="panel tint-mint featured-assets-panel">
           <div className="panel-heading"><div><h2>素材精选</h2><p>已通过审核的可复用素材</p></div><Link to="/assets">进入素材库 <ArrowRight size={15} /></Link></div>
           <div className="featured-assets-grid">
             {accountAssets.slice(0, 4).map((asset, index) => (
               <Link className="featured-asset-card" to="/assets" key={asset.id}>
-                <div className={`feature-cover small ${COVER_TONES[index % COVER_TONES.length]}`}><FileImage size={22} /></div>
-                <h3>{asset.originalName}</h3>
-                <p>{asset.workName} · {asset.usageCount ? `已使用 ${asset.usageCount} 次` : '尚未使用'}</p>
+                <div className={`feature-cover small ${COVER_TONES[index % COVER_TONES.length]}`}>{asset.previewUrl ? <img src={asset.previewUrl} alt={asset.originalName} loading="lazy" /> : <FileImage size={22} />}</div>
+                <h3>{[asset.workName, asset.chapter].filter(Boolean).join(' · ') || asset.originalName}</h3>
+                <p>{asset.usageCount ? `已使用 ${asset.usageCount} 次` : '尚未使用'}{asset.tags[0] ? ` · #${asset.tags[0]}` : ''}</p>
               </Link>
             ))}
           </div>

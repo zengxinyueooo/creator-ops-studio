@@ -1,4 +1,4 @@
-import { Check, FileImage, Layers3, Link2, RefreshCw, Search, ShieldCheck, Sparkles, Upload, X } from 'lucide-react'
+import { Check, FileImage, Layers3, PencilLine, RefreshCw, Search, ShieldCheck, Sparkles, Upload, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { PillSelect } from '../components/PillSelect'
@@ -49,6 +49,7 @@ export function AssetsPage() {
   const [analyzing, setAnalyzing] = useState(false)
   const [busyAssetId, setBusyAssetId] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [toast, setToast] = useState<{ message: string; tone: 'ok' | 'error' } | null>(null)
   const [previewAsset, setPreviewAsset] = useState<AssetItem | null>(null)
   const [editingAssetId, setEditingAssetId] = useState<string | null>(null)
   const [editFormat, setEditFormat] = useState<AssetVisualFormat>('single')
@@ -56,6 +57,17 @@ export function AssetsPage() {
   const [editTags, setEditTags] = useState('')
   const [editCharacters, setEditCharacters] = useState('')
   const [editNote, setEditNote] = useState('')
+  const toastTimer = useRef<number | null>(null)
+
+  function showToast(message: string, tone: 'ok' | 'error' = 'ok') {
+    if (toastTimer.current) window.clearTimeout(toastTimer.current)
+    setToast({ message, tone })
+    toastTimer.current = window.setTimeout(() => setToast(null), 3200)
+  }
+
+  useEffect(() => () => {
+    if (toastTimer.current) window.clearTimeout(toastTimer.current)
+  }, [])
 
   useEffect(() => {
     if (!previewAsset) return
@@ -116,12 +128,11 @@ export function AssetsPage() {
 
   async function runPendingAnalysis() {
     setAnalyzing(true)
-    setError('')
     try {
       const result = await analyzePendingAssets(1)
-      setError(result.skipped ? '这张历史素材缺少可读取的原图，已跳过。' : '已完成一张历史素材的视觉分析。')
+      showToast(result.skipped ? '这张历史素材缺少可读取的原图，已跳过。' : '已完成一张历史素材的视觉分析。', result.skipped ? 'error' : 'ok')
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '图片分析失败')
+      showToast(caught instanceof Error ? caught.message : '图片分析失败', 'error')
     } finally {
       setAnalyzing(false)
     }
@@ -129,19 +140,19 @@ export function AssetsPage() {
 
   async function toggleSelection(assetId: string) {
     if (!selectedTopicId) {
-      setError('请先选择一份 Brief')
+      showToast('请先选择一份 Brief', 'error')
       return
     }
     if (selectedTopic?.brief?.status !== 'approved') {
-      setError('请先在选题工作流中通过这份 Brief')
+      showToast('请先在选题工作流中通过这份 Brief', 'error')
       return
     }
     setBusyAssetId(assetId)
-    setError('')
     try {
       await toggleTopicAsset(selectedTopicId, assetId)
+      showToast(selectedTopicId ? '已更新这份 Brief 的选图。' : '已更新选图。')
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '选图结果保存失败')
+      showToast(caught instanceof Error ? caught.message : '选图结果保存失败', 'error')
     } finally {
       setBusyAssetId(null)
     }
@@ -158,7 +169,6 @@ export function AssetsPage() {
 
   async function saveAnalysisCorrection(assetId: string) {
     setBusyAssetId(assetId)
-    setError('')
     try {
       await correctAssetAnalysis(assetId, {
         visualFormat: editFormat,
@@ -168,8 +178,9 @@ export function AssetsPage() {
         classificationNote: editNote.trim().slice(0, 64),
       })
       setEditingAssetId(null)
+      showToast('已保存校正结果。')
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '保存素材分析失败')
+      showToast(caught instanceof Error ? caught.message : '保存素材分析失败', 'error')
     } finally {
       setBusyAssetId(null)
     }
@@ -177,11 +188,11 @@ export function AssetsPage() {
 
   async function rerunAnalysis(assetId: string) {
     setBusyAssetId(assetId)
-    setError('')
     try {
       await reanalyzeAsset(assetId)
+      showToast('已重新分析这张素材。')
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '重新分析失败')
+      showToast(caught instanceof Error ? caught.message : '重新分析失败', 'error')
     } finally {
       setBusyAssetId(null)
     }
@@ -191,7 +202,7 @@ export function AssetsPage() {
     <>
       <section className="page-heading compact-heading"><div><span className="eyebrow">ASSET LIBRARY</span><h1>素材筛选台</h1><p>每张图片采集后自动完成图型、内容类型和标签分析；单图和拼图都可作为 Brief 素材，只有无效图片会被拦截。</p></div><div className="button-row">{pendingAnalysisCount > 0 && <button className="secondary-button" disabled={analyzing} onClick={() => void runPendingAnalysis()}><Sparkles size={16} />{analyzing ? '正在分析…' : `分析下一张历史素材（余 ${pendingAnalysisCount}）`}</button>}<button className="primary-button" onClick={() => setShowUpload((value) => !value)}>{showUpload ? <X size={17} /> : <Upload size={17} />}{showUpload ? '关闭' : '上传素材'}</button></div></section>
 
-      <section className="asset-brief-bar panel">
+      <section className="asset-brief-bar panel tint-sky">
         <div><label>当前内容 Brief</label><PillSelect value={selectedTopicId} ariaLabel="当前内容 Brief" placeholder="选择 Brief" options={[{ value: '', label: '选择 Brief' }, ...briefTopics.map((topic) => ({ value: topic.id, label: topic.title }))]} onChange={selectBrief} /></div>
         <div className="asset-brief-stat"><strong>{selectedCount}</strong><span>已选素材</span></div>
         <div className="asset-brief-stat"><strong>{eligibleCount}</strong><span>可用素材</span></div>
@@ -199,7 +210,7 @@ export function AssetsPage() {
         <span className={`status-badge ${selectedTopic?.brief?.status === 'approved' ? 'green' : 'amber'}`}>{selectedTopic?.brief?.status === 'approved' ? 'Brief 已通过' : '请选择已通过的 Brief'}</span>
       </section>
 
-      {showUpload && <form className="asset-upload-panel" onSubmit={submitUpload}>
+      {showUpload && <form className="asset-upload-panel tint-peach" onSubmit={submitUpload}>
         <div className="asset-dropzone" onClick={() => fileInput.current?.click()}><input ref={fileInput} hidden type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onChange={(event) => setFiles([...(event.target.files ?? [])].slice(0, 10))} /><Upload size={24} /><strong>{files.length ? `已选择 ${files.length} 张图片` : '点击选择图片'}</strong><span>上传后自动识别图型、画面类型与标签；模型异常时不会写入素材库</span></div>
         <div className="asset-fields">
           <div className="field"><span>所属漫画</span><PillSelect value={comicId} ariaLabel="所属漫画" placeholder="选择漫画" options={[{ value: '', label: '选择漫画' }, ...comics.map((comic) => ({ value: comic.id, label: comic.title }))]} onChange={(nextId) => { setManualComicId(nextId); const comic = comics.find((item) => item.id === nextId); if (comic) setWorkName(comic.title) }} /></div>
@@ -227,19 +238,18 @@ export function AssetsPage() {
             <h3>{[asset.workName, asset.chapter].filter(Boolean).join(' · ') || asset.originalName}</h3>
             {asset.characters.length > 0 && <div className="asset-people-row">{asset.characters.map((character) => <span className="character-chip" key={character}>{character}</span>)}</div>}
             {asset.tags.length > 0 && <div className="asset-tags" aria-label="素材标签">{[...new Set(asset.tags)].slice(0, 4).map((tag) => <button className={query.trim() === tag ? 'active' : ''} type="button" key={tag} onClick={() => setQuery(tag)} aria-label={`按标签 ${tag} 筛选`}>#{tag}</button>)}</div>}
-            {asset.classificationNote && <p className="classification-note">内容语义：{asset.classificationNote}</p>}
+            {asset.classificationNote && <p className="classification-note"><span className="semantic-tag"><Sparkles size={11} />内容语义</span>{asset.classificationNote}</p>}
             {editingAssetId === asset.id ? <div className="asset-edit-panel">
               <div className="asset-edit-grid"><div><span>图型</span><PillSelect value={editFormat} ariaLabel="校正图型" options={Object.entries(visualLabels).map(([value, label]) => ({ value, label }))} onChange={(value) => setEditFormat(value as AssetVisualFormat)} /></div><div><span>类型</span><PillSelect value={editContentType} ariaLabel="校正内容类型" options={Object.entries(contentTypeLabels).map(([value, label]) => ({ value, label }))} onChange={(value) => setEditContentType(value as AssetContentType)} /></div></div>
               <input value={editTags} onChange={(event) => setEditTags(event.target.value)} placeholder="标签，用逗号分隔" aria-label="校正标签" />
               <input value={editCharacters} onChange={(event) => setEditCharacters(event.target.value)} placeholder="角色名，用逗号分隔" aria-label="校正角色" />
               <input value={editNote} onChange={(event) => setEditNote(event.target.value)} placeholder="简短画面说明" aria-label="校正画面说明" />
               <div className="asset-review-actions"><button type="button" onClick={() => setEditingAssetId(null)}>取消</button><button type="button" disabled={busyAssetId === asset.id} onClick={() => void saveAnalysisCorrection(asset.id)}>保存校正</button></div>
-            </div> : <div className="asset-analysis-actions"><button type="button" disabled={busyAssetId === asset.id} onClick={() => void rerunAnalysis(asset.id)}>{busyAssetId === asset.id ? '正在分析…' : '重新 AI 分析'}</button><button className="asset-correct-button" type="button" onClick={() => openAnalysisEditor(asset)}>手动校正</button></div>}
+            </div> : <div className="asset-analysis-actions"><button className="asset-ai-button" type="button" disabled={busyAssetId === asset.id} onClick={() => void rerunAnalysis(asset.id)}>{busyAssetId === asset.id ? '正在分析…' : <><Sparkles size={13} />重新 AI 分析</>}</button><button className="asset-correct-button" type="button" onClick={() => openAnalysisEditor(asset)}><PencilLine size={13} />手动校正</button></div>}
             <div className="usage-line"><span><RefreshCw size={12} />使用 {asset.usageCount} 次{asset.lastUsedAt ? ` · 最近 ${asset.lastUsedAt}` : ''}</span>{asset.coverUsageCount > 0 && <span>封面 {asset.coverUsageCount} 次</span>}</div>
             {selectable && <button className={`asset-select-button ${selected ? 'selected' : ''}`} disabled={busyAssetId === asset.id || !selectedTopicId} onClick={() => void toggleSelection(asset.id)}>{selected ? <Check size={15} /> : <Layers3 size={15} />}{selected ? '已加入当前 Brief' : selectedTopicId ? '加入当前 Brief' : '先选择 Brief'}</button>}
             {waitingForAnalysis && <button className="asset-select-button" type="button" disabled><Sparkles size={15} />等待自动打标后可选</button>}
             {!selectable && !waitingForAnalysis && asset.visualFormat !== 'invalid' && <p className="asset-unavailable-note">请重新 AI 分析或手动校正后再选择</p>}
-            <div className="asset-source-line"><span><Link2 size={12} />{asset.sourceType === 'xiaohongshu' ? '小红书参考' : asset.sourceType}</span></div>
           </div>
         </article>
       })}</section> : <div className="panel empty-state tall">当前筛选条件下没有素材。</div>}
@@ -251,6 +261,7 @@ export function AssetsPage() {
           <p>{[previewAsset.workName, previewAsset.chapter].filter(Boolean).join(' · ') || previewAsset.originalName} · 原图预览</p>
         </div>
       </div>}
+      {toast && <div className={`toast-pill ${toast.tone}`} role="status">{toast.message}</div>}
     </>
   )
 }
