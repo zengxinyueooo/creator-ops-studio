@@ -1,3 +1,5 @@
+import { normalizeComicProfile, validateComicProfile, validateComicCover } from './comicProfile'
+import type { ComicContentProfile } from '../types'
 import { demoState } from '../data/demo'
 import type { AssetContentType, AssetReviewStatus, AssetVisualFormat, ComicSerializationStatus, ComicStatus, ContentBrief, CopyrightStatus, ReferenceItem, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
 import type { AssetAnalysis } from './assetAnalysis'
@@ -34,8 +36,9 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
 
   const assetRows = assetsResult.data ?? []
   const signedUrls = new Map<string, string>()
-  if (assetRows.length) {
-    const { data: signedData } = await db.storage.from('content-assets').createSignedUrls(assetRows.map((row) => row.storage_path), 3600)
+  const coverPaths = (comicsResult.data ?? []).map(row => row.custom_fields?.cover_storage_path).filter((path): path is string => typeof path === 'string' && !!path)
+  if (assetRows.length || coverPaths.length) {
+    const { data: signedData } = await db.storage.from('content-assets').createSignedUrls([...assetRows.map((row) => row.storage_path), ...coverPaths], 3600)
     for (const item of signedData ?? []) {
       if (item.path && item.signedUrl) signedUrls.set(item.path, item.signedUrl)
     }
@@ -117,7 +120,9 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
       sourceUrl: row.source_url ?? undefined,
       sourceReferenceId: row.source_reference_id ?? undefined,
       sourcePosition: row.source_position ?? undefined,
-      coverUrl: row.cover_url ?? undefined,
+      coverUrl: signedUrls.get(row.custom_fields?.cover_storage_path) ?? row.cover_url ?? undefined,
+      coverStoragePath: row.custom_fields?.cover_storage_path,
+      contentProfile: normalizeComicProfile(row.custom_fields?.content_profile),
       status: row.status,
       serializationStatus: (['ongoing', 'completed'].includes(row.custom_fields?.serialization_status)
         ? row.custom_fields.serialization_status
@@ -651,4 +656,27 @@ export async function seedCloudWorkspace(userId: string) {
     custom_fields: { dateLabel: schedule.dateLabel },
   })))
   if (scheduleError) throw scheduleError
+}
+
+export async function saveCloudComicProfile(userId: string, accountId: string, comicId: string, profile: ComicContentProfile, file?: File) {
+  validateComicProfile(profile)
+  if (file) validateComicCover(file)
+  const db = client()
+  const { data: row, error: readError } = await db.from('comics').select('custom_fields').eq('id', comicId).eq('user_id', userId).eq('account_id', accountId).single()
+  if (readError) throw readError
+  let path: string | undefined
+  if (file) {
+    path = `${userId}/${accountId}/comic-covers/${crypto.randomUUID()}`
+    const { error } = await db.storage.from('content-assets').upload(path, file, { contentType: file.type, upsert: false })
+    if (error) throw error
+  }
+  const { error } = await db.from('comics').update({ custom_fields: {
+    ...row.custom_fields, content_profile: profile,
+    ...(path ? { cover_storage_path: path } : {}),
+  } }).eq('id', comicId).eq('user_id', userId).eq('account_id', accountId)
+  if (error) {
+    if (path) await db.storage.from('content-assets').remove([path])
+    throw error
+  }
+  return path
 }

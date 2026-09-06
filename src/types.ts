@@ -11,6 +11,25 @@ export type ComicStatus =
 
 export type ComicSerializationStatus = 'ongoing' | 'completed' | 'unknown'
 
+/**
+ * A compact, human-maintained knowledge card for a comic.  It intentionally
+ * distinguishes verified official copy from the operator's own editorial
+ * interpretation: Brief generation can use both, but must never fill gaps by
+ * inventing plot facts.
+ */
+export interface ComicContentProfile {
+  officialSynopsis: string
+  officialSourceUrl?: string
+  setting: string
+  mainCharacters: string[]
+  relationshipSummary: string
+  coreConflicts: string[]
+  contentThemes: string[]
+  toneTags: string[]
+  spoilerBoundary: string
+  updatedAt?: string
+}
+
 export type TopicStatus =
   | 'idea'
   | 'research'
@@ -26,6 +45,7 @@ export interface ContentBrief {
   status: BriefStatus
   generationMode?: 'model' | 'template'
   model?: string
+  evidence?: { comicId: string; profile: ComicContentProfile; referenceIds: string[]; generatedAt: string }
   angle: string
   coreEmotion: string
   hook: string
@@ -56,6 +76,8 @@ export interface Comic {
   updateWeekday?: number
   updateNote: string
   selectionNote: string
+  coverStoragePath?: string
+  contentProfile?: ComicContentProfile
   createdAt: string
 }
 

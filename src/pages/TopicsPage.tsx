@@ -85,6 +85,7 @@ export function TopicsPage() {
             <ul className="avoid-list">{selectedBrief.brief.avoidances.map((item) => <li key={item}><XCircle size={13} />{item}</li>)}</ul>
           </div>
         </div>
+        {selectedBrief.brief.evidence && <details><summary>查看生成证据（{selectedBrief.brief.evidence.referenceIds.length} 条参考）</summary><p>生成时间：{selectedBrief.brief.evidence.generatedAt} · 档案更新时间：{selectedBrief.brief.evidence.profile.updatedAt || '未知'}</p><p>官方简介：{selectedBrief.brief.evidence.profile.officialSynopsis || '未知'}</p><p>官方来源：{selectedBrief.brief.evidence.profile.officialSourceUrl || '未知'}</p><p>剧透边界：{selectedBrief.brief.evidence.profile.spoilerBoundary || '未知'}</p><p>参考 ID：{selectedBrief.brief.evidence.referenceIds.join('、')}</p></details>}
         {briefError && <p className="research-error">{briefError}</p>}
         <div className="brief-actions"><span>参考笔记 {selectedBrief.referenceCount} 条 · {selectedBrief.brief.status === 'approved' ? '已进入素材筛选' : selectedBrief.brief.status === 'rejected' ? '已退回调研' : '通过后进入素材筛选'}</span><div className="button-row">
           {selectedBrief.brief.status === 'candidate' && <><button className="secondary-button" onClick={() => void rejectBrief(selectedBrief.id)}><XCircle size={15} />放弃</button><button className="primary-button" onClick={() => void approveBrief(selectedBrief.id)}><CheckCircle2 size={15} />通过 Brief</button></>}

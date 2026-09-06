@@ -1,3 +1,4 @@
+import { ComicProfileEditor } from '../components/ComicProfileEditor'
 import { ArrowUpRight, BookOpen, Check, CircleX, Library, Plus, Search } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { useWorkspace } from '../store/WorkspaceContext'
@@ -18,10 +19,11 @@ const serializationLabels = {
 
 const COVER_TONES = ['pink', 'blue', 'purple', 'amber'] as const
 
-function ComicCard({ comic, mode, tone, onKeep, onDrop }: {
+function ComicCard({ comic, mode, tone, onEdit, onKeep, onDrop }: {
   comic: Comic
   mode: 'candidate' | 'selected'
   tone: string
+  onEdit: () => void
   onKeep?: () => void
   onDrop?: () => void
 }) {
@@ -29,7 +31,7 @@ function ComicCard({ comic, mode, tone, onKeep, onDrop }: {
   const serialization = serializationLabels[comic.serializationStatus]
   return (
     <article className="comic-card">
-      <div className={`comic-cover-placeholder ${tone}`}><BookOpen size={25} /><span>{comic.title.slice(0, 1)}</span></div>
+      <div className={`comic-cover-placeholder ${tone}`}>{comic.coverUrl ? <img src={comic.coverUrl} alt={`${comic.title}封面`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <><BookOpen size={25} /><span>{comic.title.slice(0, 1)}</span></>}</div>
       <div className="comic-card-body">
         <div className="comic-card-top">
           <span className={`status-badge ${mode === 'selected' ? 'green' : 'amber'}`}>{mode === 'selected' ? '已保留' : '待审核'}</span>
@@ -38,6 +40,8 @@ function ComicCard({ comic, mode, tone, onKeep, onDrop }: {
         <h3>{comic.title}</h3>
         <p className="comic-platform">{platform} · {serialization}{comic.updateNote ? ` · ${comic.updateNote}` : ''}</p>
         <p className="comic-reason">{comic.selectionNote || '暂无调研说明'}</p>
+        <p className="comic-reason">官方简介：{comic.contentProfile?.officialSynopsis || '未知 / 待补充档案'}</p>
+        <button className="secondary-button" type="button" onClick={onEdit}>编辑漫画档案</button>
         <div className="comic-card-footer">
           {comic.sourceUrl ? <a href={comic.sourceUrl} target="_blank" rel="noreferrer">查看来源 <ArrowUpRight size={14} /></a> : <span>未填写来源</span>}
           {mode === 'candidate' && <div>
@@ -52,6 +56,7 @@ function ComicCard({ comic, mode, tone, onKeep, onDrop }: {
 
 export function ComicsPage() {
   const { activeAccount, state, addComic, updateComicStatus } = useWorkspace()
+  const [editingId, setEditingId] = useState<string>()
   const [showForm, setShowForm] = useState(false)
   const [title, setTitle] = useState('')
   const [sourceUrl, setSourceUrl] = useState('')
@@ -107,6 +112,7 @@ export function ComicsPage() {
         <p>Demo 流程：录入候选 → 人工审核 → 进入漫画库</p>
       </section>
 
+      {editingId && comics.find(comic => comic.id === editingId) && <ComicProfileEditor key={editingId} comic={comics.find(comic => comic.id === editingId)!} onClose={() => setEditingId(undefined)} />}
       {showForm && <form className="comic-create-panel" onSubmit={submitCandidate}>
         <div className="panel-heading"><div><h2>录入一条调研结果</h2><p>目前先手动录入，下一版再承接自动调研结果。</p></div></div>
         <div className="comic-form-fields">
@@ -123,12 +129,12 @@ export function ComicsPage() {
 
       <section className="comic-section">
         <div className="comic-section-heading"><div><span className="comic-step">1</span><span><h2>待审核候选</h2><p>调研得到的漫画先集中放在这里</p></span></div><span>{candidates.length} 部</span></div>
-        {candidates.length ? <div className="comic-grid">{candidates.map((comic, index) => <ComicCard key={comic.id} comic={comic} mode="candidate" tone={COVER_TONES[index % COVER_TONES.length]} onKeep={() => void review(comic.id, true)} onDrop={() => void review(comic.id, false)} />)}</div> : <div className="comic-empty"><Check size={22} /><strong>候选都审核完了</strong><span>点击右上角“录入调研结果”可以继续添加。</span></div>}
+        {candidates.length ? <div className="comic-grid">{candidates.map((comic, index) => <ComicCard key={comic.id} comic={comic} onEdit={() => setEditingId(comic.id)} mode="candidate" tone={COVER_TONES[index % COVER_TONES.length]} onKeep={() => void review(comic.id, true)} onDrop={() => void review(comic.id, false)} />)}</div> : <div className="comic-empty"><Check size={22} /><strong>候选都审核完了</strong><span>点击右上角“录入调研结果”可以继续添加。</span></div>}
       </section>
 
       <section className="comic-section">
         <div className="comic-section-heading"><div><span className="comic-step done">2</span><span><h2>我的漫画库</h2><p>你确认保留、后续准备做内容的漫画</p></span></div><span>{selected.length} 部</span></div>
-        {selected.length ? <div className="comic-grid">{selected.map((comic, index) => <ComicCard key={comic.id} comic={comic} mode="selected" tone={COVER_TONES[index % COVER_TONES.length]} />)}</div> : <div className="comic-empty"><Library size={22} /><strong>还没有保留的漫画</strong><span>审核候选漫画后，它会出现在这里。</span></div>}
+        {selected.length ? <div className="comic-grid">{selected.map((comic, index) => <ComicCard key={comic.id} comic={comic} onEdit={() => setEditingId(comic.id)} mode="selected" tone={COVER_TONES[index % COVER_TONES.length]} />)}</div> : <div className="comic-empty"><Library size={22} /><strong>还没有保留的漫画</strong><span>审核候选漫画后，它会出现在这里。</span></div>}
       </section>
     </>
   )

@@ -1,3 +1,5 @@
+import { normalizeComicProfile, validateComicProfile, validateComicCover } from '../lib/comicProfile'
+import type { ComicContentProfile } from '../types'
 /* oxlint-disable react/only-export-components -- Provider and hook intentionally share one typed context. */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Database, RefreshCw, Sparkles } from 'lucide-react'
@@ -11,6 +13,7 @@ import {
   downloadCapturedImage,
 } from '../lib/opencliBridge'
 import {
+  saveCloudComicProfile,
   createCloudComic,
   createCloudSchedule,
   createCloudTopic,
@@ -50,6 +53,7 @@ interface WorkspaceContextValue {
   addSchedule: (input: { title: string; kind: ScheduleItem['kind']; dateLabel: string }) => Promise<void>
   deleteSchedule: (scheduleId: string) => Promise<void>
   addComic: (input: Pick<Comic, 'title' | 'platform' | 'selectionNote'> & { sourceUrl: string }) => Promise<void>
+  saveComicProfile: (comicId: string, profile: ComicContentProfile, cover?: File) => Promise<void>
   updateComicStatus: (comicId: string, status: ComicStatus) => Promise<void>
   updateTopicStatus: (topicId: string, status: TopicStatus) => void
   generateTopicBrief: (topicId: string) => Promise<void>
@@ -70,6 +74,11 @@ interface WorkspaceContextValue {
   toggleTopicAsset: (topicId: string, assetId: string) => Promise<void>
   markTopicPublished: (topicId: string) => Promise<void>
   resetDemo: () => void
+}
+
+function referenceImagesComplete(reference: ReferenceItem, assets: AssetItem[]) {
+  const positions = new Set(assets.filter(asset => asset.sourceReferenceId === reference.id && asset.comicId === reference.comicId && asset.accountId === reference.accountId).map(asset => asset.sourcePosition))
+  return reference.imageCount > 0 && Array.from({ length: reference.imageCount }, (_, index) => index + 1).every(position => positions.has(position))
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null)
@@ -260,6 +269,28 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }, ...current.comics],
       }))
     },
+    saveComicProfile: async (comicId, input, cover) => {
+      const comic = state.comics.find(item => item.id === comicId && item.accountId === state.activeAccountId)
+      if (!comic || !['kuaikan', '快看漫画'].includes(comic.platform)) throw new Error('请选择快看漫画档案')
+      const profile = { ...normalizeComicProfile(input), updatedAt: new Date().toISOString() }
+      validateComicProfile(profile)
+      if (cover) validateComicCover(cover)
+      if (dataMode === 'supabase') {
+        if (!user) throw new Error('请先登录')
+        await saveCloudComicProfile(user.id, comic.accountId, comicId, profile, cover)
+        await reload()
+        return
+      }
+      const coverUrl = cover ? await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result))
+        reader.onerror = () => reject(new Error('封面读取失败'))
+        reader.readAsDataURL(cover)
+      }) : comic.coverUrl
+      const next = { ...state, comics: state.comics.map(item => item.id === comicId ? { ...item, contentProfile: profile, coverUrl } : item) }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+      setState(next)
+    },
     updateComicStatus: async (comicId, status) => {
       const previous = state
       setState((current) => ({
@@ -296,9 +327,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const linkedReferences = state.references
         .filter((reference) => reference.topicIds.includes(topicId) && reference.reviewStatus === 'kept')
       const references = linkedReferences
-        .filter((reference) => reference.detailStatus === 'detailed')
+        .filter((reference) => reference.detailStatus === 'detailed' && referenceImagesComplete(reference, state.assets))
         .sort((left, right) => right.likes - left.likes)
-      if (linkedReferences.length && !references.length) throw new Error('请先采集至少一篇已保留参考笔记的完整信息，再生成 Brief')
+      if (!references.length) throw new Error('请先采集至少一篇已保留参考笔记的完整信息，再生成 Brief')
       const brief: ContentBrief = await generateContentBrief(topic, comic, references)
       if (dataMode === 'supabase') await updateCloudTopicBrief(topicId, brief)
       setState((current) => ({
@@ -585,7 +616,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (!referenceIds.length) throw new Error('请至少选择一条参考笔记')
       const selectedReferences = state.references.filter((reference) => referenceIds.includes(reference.id))
       if (selectedReferences.length !== referenceIds.length) throw new Error('部分参考笔记已不存在，请刷新后重试')
-      if (selectedReferences.some((reference) => reference.comicId !== input.comicId)) throw new Error('一次只能合并同一部漫画的参考笔记')
+      if (selectedReferences.some(reference => reference.accountId !== state.activeAccountId || reference.reviewStatus !== 'kept' || reference.detailStatus !== 'detailed' || !reference.body.trim() || !referenceImagesComplete(reference, state.assets))) throw new Error('请先保留并采集参考笔记完整信息')
+      if (!input.comicId || selectedReferences.some((reference) => reference.comicId !== input.comicId)) throw new Error('一次只能合并同一部漫画的参考笔记')
 
       if (dataMode === 'supabase' && user) {
         await createCloudTopicFromReferences(user.id, state.activeAccountId, input, referenceIds)
