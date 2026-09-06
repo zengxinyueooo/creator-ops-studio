@@ -119,8 +119,8 @@ export function AssetsPage() {
     setAnalyzing(true)
     setError('')
     try {
-      const result = await analyzePendingAssets()
-      setError(result.skipped ? `已分析 ${result.analyzed} 张；${result.skipped} 张因缺少原图而跳过。` : `已完成 ${result.analyzed} 张历史素材的视觉分析。`)
+      const result = await analyzePendingAssets(1)
+      setError(result.skipped ? '这张历史素材缺少可读取的原图，已跳过。' : '已完成一张历史素材的视觉分析。')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '图片分析失败')
     } finally {
@@ -178,7 +178,7 @@ export function AssetsPage() {
 
   return (
     <>
-      <section className="page-heading compact-heading"><div><span className="eyebrow">ASSET LIBRARY</span><h1>素材筛选台</h1><p>每张图片采集后自动完成图型、内容类型和标签分析；单图和拼图都可作为 Brief 素材，只有无效图片会被拦截。</p></div><div className="button-row">{pendingAnalysisCount > 0 && <button className="secondary-button" disabled={analyzing} onClick={() => void runPendingAnalysis()}><Sparkles size={16} />{analyzing ? '正在分析…' : `分析历史素材 ${pendingAnalysisCount}`}</button>}<button className="primary-button" onClick={() => setShowUpload((value) => !value)}>{showUpload ? <X size={17} /> : <Upload size={17} />}{showUpload ? '关闭' : '上传素材'}</button></div></section>
+      <section className="page-heading compact-heading"><div><span className="eyebrow">ASSET LIBRARY</span><h1>素材筛选台</h1><p>每张图片采集后自动完成图型、内容类型和标签分析；单图和拼图都可作为 Brief 素材，只有无效图片会被拦截。</p></div><div className="button-row">{pendingAnalysisCount > 0 && <button className="secondary-button" disabled={analyzing} onClick={() => void runPendingAnalysis()}><Sparkles size={16} />{analyzing ? '正在分析…' : `分析下一张历史素材（余 ${pendingAnalysisCount}）`}</button>}<button className="primary-button" onClick={() => setShowUpload((value) => !value)}>{showUpload ? <X size={17} /> : <Upload size={17} />}{showUpload ? '关闭' : '上传素材'}</button></div></section>
 
       <section className="asset-brief-bar panel">
         <div><label>当前内容 Brief</label><PillSelect value={selectedTopicId} ariaLabel="当前内容 Brief" placeholder="选择 Brief" options={[{ value: '', label: '选择 Brief' }, ...briefTopics.map((topic) => ({ value: topic.id, label: topic.title }))]} onChange={selectBrief} /></div>

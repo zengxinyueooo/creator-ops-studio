@@ -65,7 +65,7 @@ interface WorkspaceContextValue {
   uploadAssets: (files: File[], metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; comicId?: string; topicId?: string; sourceReferenceId?: string; sourceNoteId?: string; sourceNoteTags?: string[]; visualFormat?: AssetVisualFormat; contentType?: AssetContentType; characters?: string[]; classificationNote?: string }) => Promise<void>
   reviewAsset: (assetId: string, visualFormat: AssetVisualFormat, reviewStatus: AssetReviewStatus) => Promise<void>
   correctAssetAnalysis: (assetId: string, input: Pick<AssetAnalysis, 'visualFormat' | 'contentType' | 'tags' | 'characters' | 'classificationNote'>) => Promise<void>
-  analyzePendingAssets: () => Promise<{ analyzed: number; skipped: number }>
+  analyzePendingAssets: (limit?: number) => Promise<{ analyzed: number; skipped: number }>
   toggleTopicAsset: (topicId: string, assetId: string) => Promise<void>
   markTopicPublished: (topicId: string) => Promise<void>
   resetDemo: () => void
@@ -709,8 +709,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         } : item),
       }))
     },
-    analyzePendingAssets: async () => {
-      const targets = state.assets.filter((asset) => asset.accountId === state.activeAccountId && (asset.reviewStatus === 'pending' || asset.visualFormat === 'uncertain'))
+    analyzePendingAssets: async (limit = 1) => {
+      const targets = state.assets
+        .filter((asset) => asset.accountId === state.activeAccountId && (asset.reviewStatus === 'pending' || asset.visualFormat === 'uncertain'))
+        .slice(0, Math.max(1, limit))
       let analyzed = 0
       let skipped = 0
       for (const asset of targets) {
