@@ -24,6 +24,8 @@ export type BriefStatus = 'candidate' | 'approved' | 'rejected'
 
 export interface ContentBrief {
   status: BriefStatus
+  generationMode?: 'model' | 'template'
+  model?: string
   angle: string
   coreEmotion: string
   hook: string

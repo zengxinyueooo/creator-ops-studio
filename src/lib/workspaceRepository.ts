@@ -1,5 +1,6 @@
 import { demoState } from '../data/demo'
 import type { AssetContentType, AssetReviewStatus, AssetVisualFormat, ComicSerializationStatus, ComicStatus, ContentBrief, CopyrightStatus, ReferenceItem, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
+import type { AssetAnalysis } from './assetAnalysis'
 import { supabase } from './supabase'
 
 function client() {
@@ -380,6 +381,23 @@ export async function updateCloudAssetReview(
   }
 }
 
+export async function updateCloudAssetAnalysis(assetId: string, analysis: AssetAnalysis) {
+  const { error } = await client().from('assets').update({
+    visual_format: analysis.visualFormat,
+    review_status: analysis.reviewStatus,
+    tags: analysis.tags,
+    content_type: analysis.contentType,
+    characters: analysis.characters,
+    classification_note: analysis.classificationNote,
+    classification_confidence: analysis.confidence ?? null,
+  }).eq('id', assetId)
+  if (error) throw error
+  if (analysis.visualFormat !== 'single' || analysis.reviewStatus !== 'available') {
+    const { error: linkError } = await client().from('topic_assets').delete().eq('asset_id', assetId)
+    if (linkError) throw linkError
+  }
+}
+
 export async function setCloudTopicAsset(topicId: string, assetId: string, selected: boolean, position: number) {
   const db = client()
   if (!selected) {
@@ -475,7 +493,7 @@ export async function uploadCloudAssets(
   userId: string,
   accountId: string,
   files: File[],
-  metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; comicId?: string; topicId?: string; sourceReferenceId?: string; sourceNoteId?: string; sourceNoteTags?: string[]; visualFormat?: AssetVisualFormat; contentType?: AssetContentType; characters?: string[]; classificationNote?: string },
+  metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; comicId?: string; topicId?: string; sourceReferenceId?: string; sourceNoteId?: string; sourceNoteTags?: string[]; visualFormat?: AssetVisualFormat; contentType?: AssetContentType; characters?: string[]; classificationNote?: string; analyses?: AssetAnalysis[] },
 ) {
   const db = client()
   const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
@@ -496,6 +514,9 @@ export async function uploadCloudAssets(
     if (!allowedTypes.has(file.type)) throw new Error(`${file.name} 不是支持的图片格式`)
     if (file.size > 15 * 1024 * 1024) throw new Error(`${file.name} 超过 15MB`)
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(-100) || 'image'
+    const analysis = metadata.analyses?.[fileIndex]
+    const visualFormat = analysis?.visualFormat ?? metadata.visualFormat ?? 'uncertain'
+    const reviewStatus = analysis?.reviewStatus ?? (visualFormat === 'single' ? 'available' : 'pending')
     const storagePath = `${userId}/${accountId}/${crypto.randomUUID()}-${safeName}`
     const { error: uploadError } = await db.storage.from('content-assets').upload(storagePath, file, { upsert: false, contentType: file.type })
     if (uploadError) throw uploadError
@@ -512,14 +533,13 @@ export async function uploadCloudAssets(
       byte_size: file.size,
       source_url: metadata.sourceUrl || null,
       source_type: metadata.sourceType,
-      tags: metadata.tags,
-      visual_format: metadata.visualFormat ?? 'uncertain',
-      review_status: metadata.visualFormat === 'single' ? 'available' : 'pending',
-      classification_note: metadata.classificationNote
-        ? `${metadata.classificationNote}（第 ${fileIndex + 1} 张）`
-        : metadata.visualFormat === 'single' ? '人工确认为单图' : '',
-      content_type: metadata.contentType ?? 'other',
-      characters: metadata.characters ?? [],
+      tags: analysis?.tags ?? metadata.tags,
+      visual_format: visualFormat,
+      review_status: reviewStatus,
+      classification_note: analysis?.classificationNote ?? metadata.classificationNote ?? '',
+      classification_confidence: analysis?.confidence ?? null,
+      content_type: analysis?.contentType ?? metadata.contentType ?? 'other',
+      characters: analysis?.characters ?? metadata.characters ?? [],
       chapter_label: metadata.chapter,
       custom_fields: {
         workName: metadata.workName,
@@ -527,11 +547,12 @@ export async function uploadCloudAssets(
         copyrightStatus: metadata.copyrightStatus,
         sourceNoteId: metadata.sourceNoteId || null,
         sourceNoteTags: metadata.sourceNoteTags ?? [],
+        classificationModel: analysis?.model ?? null,
       },
     }).select('id').single()
     if (assetError) throw assetError
 
-    if (metadata.topicId && metadata.visualFormat === 'single') {
+    if (metadata.topicId && visualFormat === 'single' && reviewStatus === 'available') {
       const { error: linkError } = await db.from('topic_assets').insert({ topic_id: metadata.topicId, asset_id: asset.id })
       if (linkError) throw linkError
     }
