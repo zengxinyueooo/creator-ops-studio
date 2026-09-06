@@ -44,6 +44,28 @@ const sections: Array<{
 const fields = sections.flatMap((section) => section.fields)
 const listFields = new Set<ProfileField>(fields.filter((field) => field.list).map((field) => field.key))
 
+const coverExtensions: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+}
+
+async function downloadCover(url: string, title: string) {
+  let parsed: URL
+  try { parsed = new URL(url) }
+  catch { throw new Error('封面图片链接格式不正确') }
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('封面图片链接必须使用 http 或 https')
+
+  const response = await fetch(parsed.toString())
+  if (!response.ok) throw new Error(`封面下载失败（HTTP ${response.status}）`)
+  const blob = await response.blob()
+  const mimeType = blob.type.split(';')[0].toLowerCase()
+  const extension = coverExtensions[mimeType]
+  if (!extension) throw new Error('封面链接返回的不是支持的图片格式')
+  return new File([blob], `${title}-官方封面.${extension}`, { type: mimeType })
+}
+
 function formatProfileTime(value?: string) {
   if (!value) return '尚未保存'
   const date = new Date(value)
@@ -59,9 +81,10 @@ export function ComicProfileEditor({ comic, onClose }: { comic: Comic; onClose: 
     return Object.fromEntries(fields.map(({ key }) => [key, Array.isArray(profile[key]) ? profile[key].join('\n') : profile[key] ?? ''])) as Record<ProfileField, string>
   })
   const [cover, setCover] = useState<File>()
+  const [coverSourceUrl, setCoverSourceUrl] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const coverPreview = useMemo(() => cover ? URL.createObjectURL(cover) : comic.coverUrl, [comic.coverUrl, cover])
+  const coverPreview = useMemo(() => cover ? URL.createObjectURL(cover) : coverSourceUrl.trim() || comic.coverUrl, [comic.coverUrl, cover, coverSourceUrl])
   const draftProfile = normalizeComicProfile(Object.fromEntries(fields.map(({ key }) => [key, listFields.has(key) ? values[key].split('\n') : values[key]])) as unknown as ComicContentProfile)
   const progress = getComicProfileProgress(draftProfile)
 
@@ -87,7 +110,8 @@ export function ComicProfileEditor({ comic, onClose }: { comic: Comic; onClose: 
     setSaving(true)
     setError('')
     try {
-      await saveComicProfile(comic.id, draftProfile, cover)
+      const nextCover = cover ?? (coverSourceUrl.trim() ? await downloadCover(coverSourceUrl.trim(), comic.title) : undefined)
+      await saveComicProfile(comic.id, draftProfile, nextCover)
       onClose()
     } catch (caught) { setError(caught instanceof Error ? caught.message : '档案保存失败') }
     finally { setSaving(false) }
@@ -119,8 +143,12 @@ export function ComicProfileEditor({ comic, onClose }: { comic: Comic; onClose: 
               <div><strong>{progress.isComplete ? '档案已完善' : `已填写 ${progress.completed} / ${progress.total} 项`}</strong><span>{formatProfileTime(comic.contentProfile?.updatedAt)}</span></div>
               <div className="comic-profile-progress" aria-label={`档案完成度 ${progress.percent}%`}><span style={{ width: `${progress.percent}%` }} /></div>
               <p>留空即表示未知，生成内容时不会自动补写人物、关系或剧情。</p>
-              <label className="comic-profile-cover-control"><ImagePlus size={16} /><span>{cover ? `已选择：${cover.name}` : comic.coverUrl ? '更换封面' : '上传封面'}</span><input type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={saving} onChange={(event) => setCover(event.target.files?.[0])} /></label>
-              <small>JPG / PNG / WebP / GIF，最大 5MB</small>
+              <div className="comic-profile-cover-options">
+                <label className="comic-profile-cover-control"><ImagePlus size={16} /><span>{cover ? `已选择：${cover.name}` : comic.coverUrl ? '更换封面' : '上传封面'}</span><input type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={saving} onChange={(event) => setCover(event.target.files?.[0])} /></label>
+                <span>或</span>
+                <input className="comic-profile-cover-url" type="url" aria-label="封面图片链接" value={coverSourceUrl} placeholder="粘贴官方封面图片链接" disabled={saving} onChange={(event) => { setCoverSourceUrl(event.target.value); if (event.target.value) setCover(undefined) }} />
+              </div>
+              <small>链接图片会下载到私有素材库；支持 JPG / PNG / WebP / GIF，最大 5MB</small>
             </div>
           </div>
 

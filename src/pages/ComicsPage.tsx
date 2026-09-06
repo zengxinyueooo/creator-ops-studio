@@ -35,7 +35,7 @@ function ComicCard({ comic, mode, tone, onEdit, onKeep, onDrop }: {
   const profileTags = [...profile.contentThemes, ...profile.toneTags].slice(0, 3)
   return (
     <article className="comic-card">
-      <div className={`comic-cover-placeholder ${tone}`}>{comic.coverUrl ? <img src={comic.coverUrl} alt={`${comic.title}封面`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <><BookOpen size={25} /><span>{comic.title.slice(0, 1)}</span></>}</div>
+      <div className={`comic-cover-placeholder ${tone}${comic.coverUrl ? ' has-cover' : ''}`}>{comic.coverUrl ? <><img className="comic-cover-backdrop" src={comic.coverUrl} alt="" aria-hidden="true" /><img className="comic-cover-image" src={comic.coverUrl} alt={`${comic.title}封面`} /></> : <><BookOpen size={25} /><span>{comic.title.slice(0, 1)}</span></>}</div>
       <div className="comic-card-body">
         <div className="comic-card-top">
           <span className={`status-badge ${mode === 'selected' ? 'green' : 'amber'}`}>{mode === 'selected' ? '已保留' : '待审核'}</span>
