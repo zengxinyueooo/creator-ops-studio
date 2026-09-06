@@ -183,7 +183,7 @@ export function AssetsPage() {
       <section className="asset-brief-bar panel">
         <div><label>当前内容 Brief</label><PillSelect value={selectedTopicId} ariaLabel="当前内容 Brief" placeholder="选择 Brief" options={[{ value: '', label: '选择 Brief' }, ...briefTopics.map((topic) => ({ value: topic.id, label: topic.title }))]} onChange={selectBrief} /></div>
         <div className="asset-brief-stat"><strong>{selectedCount}</strong><span>已选素材</span></div>
-        <div className="asset-brief-stat"><strong>{eligibleCount}</strong><span>可用单图</span></div>
+        <div className="asset-brief-stat"><strong>{eligibleCount}</strong><span>可用素材</span></div>
         <div className="brief-guidance-row">{selectedComic && <span className="guidance-chip comic">《{selectedComic.title}》</span>}{(selectedTopic?.brief ? selectedTopic.brief.assetGuidance : ['先在选题工作流中生成并通过 Brief']).map((item) => <span key={item} className="guidance-chip">{item}</span>)}</div>
         <span className={`status-badge ${selectedTopic?.brief?.status === 'approved' ? 'green' : 'amber'}`}>{selectedTopic?.brief?.status === 'approved' ? 'Brief 已通过' : '请选择已通过的 Brief'}</span>
       </section>
