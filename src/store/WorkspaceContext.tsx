@@ -65,6 +65,7 @@ interface WorkspaceContextValue {
   uploadAssets: (files: File[], metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; comicId?: string; topicId?: string; sourceReferenceId?: string; sourceNoteId?: string; sourceNoteTags?: string[]; visualFormat?: AssetVisualFormat; contentType?: AssetContentType; characters?: string[]; classificationNote?: string }) => Promise<void>
   reviewAsset: (assetId: string, visualFormat: AssetVisualFormat, reviewStatus: AssetReviewStatus) => Promise<void>
   correctAssetAnalysis: (assetId: string, input: Pick<AssetAnalysis, 'visualFormat' | 'contentType' | 'tags' | 'characters' | 'classificationNote'>) => Promise<void>
+  reanalyzeAsset: (assetId: string) => Promise<void>
   analyzePendingAssets: (limit?: number) => Promise<{ analyzed: number; skipped: number }>
   toggleTopicAsset: (topicId: string, assetId: string) => Promise<void>
   markTopicPublished: (topicId: string) => Promise<void>
@@ -657,6 +658,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     reviewAsset: async (assetId, visualFormat, reviewStatus) => {
       const asset = state.assets.find((item) => item.id === assetId)
       if (!asset) throw new Error('素材不存在')
+      const remainsSelectable = visualFormat !== 'invalid' && reviewStatus === 'available'
       const classificationNote = visualFormat === 'single' ? '人工确认为单图' : visualFormat === 'collage' ? '人工确认为拼图' : asset.classificationNote
       if (dataMode === 'supabase') {
         await updateCloudAssetReview(assetId, { visualFormat, reviewStatus, classificationNote })
@@ -670,10 +672,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           visualFormat,
           reviewStatus,
           classificationNote,
-          topicIds: visualFormat === 'single' && reviewStatus === 'available' ? item.topicIds : [],
-          topicId: visualFormat === 'single' && reviewStatus === 'available' ? item.topicId : undefined,
+          topicIds: remainsSelectable ? item.topicIds : [],
+          topicId: remainsSelectable ? item.topicId : undefined,
         } : item),
-        topics: visualFormat === 'single' && reviewStatus === 'available'
+        topics: remainsSelectable
           ? current.topics
           : current.topics.map((topic) => asset.topicIds.includes(topic.id)
             ? { ...topic, assetCount: Math.max(0, topic.assetCount - 1), updatedAt: '刚刚' }
@@ -704,6 +706,36 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           contentType: analysis.contentType,
           characters: analysis.characters,
           classificationNote: analysis.classificationNote,
+          topicIds: analysis.visualFormat === 'invalid' ? [] : item.topicIds,
+          topicId: analysis.visualFormat === 'invalid' ? undefined : item.topicId,
+        } : item),
+      }))
+    },
+    reanalyzeAsset: async (assetId) => {
+      const asset = state.assets.find((item) => item.id === assetId)
+      if (!asset) throw new Error('素材不存在')
+      if (!asset.previewUrl) throw new Error('这张素材缺少可读取的原图，无法重新分析')
+      const response = await fetch(asset.previewUrl)
+      if (!response.ok) throw new Error('原图暂时无法读取，请稍后重试')
+      const blob = await response.blob()
+      const file = new File([blob], asset.originalName, { type: asset.mimeType || blob.type })
+      const analysis = await analyzeComicAsset(file)
+      if (dataMode === 'supabase') {
+        await updateCloudAssetAnalysis(asset.id, analysis)
+        await reload()
+        return
+      }
+      setState((current) => ({
+        ...current,
+        assets: current.assets.map((item) => item.id === asset.id ? {
+          ...item,
+          visualFormat: analysis.visualFormat,
+          reviewStatus: analysis.reviewStatus,
+          tags: analysis.tags,
+          contentType: analysis.contentType,
+          characters: analysis.characters,
+          classificationNote: analysis.classificationNote,
+          classificationConfidence: analysis.confidence,
           topicIds: analysis.visualFormat === 'invalid' ? [] : item.topicIds,
           topicId: analysis.visualFormat === 'invalid' ? undefined : item.topicId,
         } : item),
