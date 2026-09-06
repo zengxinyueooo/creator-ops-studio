@@ -396,9 +396,13 @@ function localOpenCliPlugin() {
 }
 
 class SiliconFlowRequestError extends Error {
-  constructor(message: string, readonly status?: number, readonly retryable = false) {
+  status?: number
+  retryable: boolean
+  constructor(message: string, status?: number, retryable = false) {
     super(message)
     this.name = 'SiliconFlowRequestError'
+    this.status = status
+    this.retryable = retryable
   }
 }
 
