@@ -35,7 +35,14 @@ export function DraftsPage() {
         prompt: JSON.stringify({
           task: '生成一个可由用户继续编辑的小红书漫画图文草稿。返回 title（不超过24个中文字符）和 body（正文，含自然的讨论收尾）。',
           brief: selected.brief,
-          assets: selectedAssets.map((asset) => ({ tags: asset.tags, contentType: asset.contentType, characters: asset.characters, chapter: asset.chapter })),
+          assets: selectedAssets.map((asset) => ({
+            semantic: asset.classificationNote,
+            tags: asset.tags,
+            contentType: asset.contentType,
+            characters: asset.characters,
+            chapter: asset.chapter,
+            visualFormat: asset.visualFormat,
+          })),
         }),
         maxTokens: 850,
         temperature: 0.75,
@@ -85,7 +92,7 @@ export function DraftsPage() {
 
   return (
     <>
-      <section className="page-heading compact-heading"><div><span className="eyebrow">BRIEF + ASSETS → COPY</span><h1>文案工作台</h1><p>文案只使用已通过的 Brief 和你勾选的单图素材；标记发布后才累计素材使用次数。</p></div><button className="primary-button" disabled={generating} onClick={() => void generateDraft()}><Sparkles size={17} />{generating ? '正在生成…' : '基于 Brief 生成'}</button></section>
+      <section className="page-heading compact-heading"><div><span className="eyebrow">BRIEF + ASSETS → COPY</span><h1>文案工作台</h1><p>文案只使用已通过的 Brief 与你勾选、已完成视觉分析的素材；标记发布后才累计素材使用次数。</p></div><button className="primary-button" disabled={generating} onClick={() => void generateDraft()}><Sparkles size={17} />{generating ? '正在调用模型…' : '基于 Brief 生成'}</button></section>
       <section className="draft-layout">
         <aside className="panel draft-list"><div className="panel-heading"><div><h2>内容 Brief</h2><p>{briefTopics.length} 份候选</p></div><FileText size={18} /></div>{briefTopics.map((topic) => <button key={topic.id} onClick={() => { setSelectedId(topic.id); setDraftTitle(''); setDraftBody(''); setVersion(0); setGenerationLabel(''); setMessage('') }} className={topic.id === selected?.id ? 'draft-item active' : 'draft-item'}><span>{topic.title.slice(0, 1)}</span><div><strong>{topic.title}</strong><small>{topic.brief?.status === 'approved' ? 'Brief 已通过' : '等待 Brief 审核'} · {topic.assetCount} 张素材</small></div></button>)}{!briefTopics.length && <div className="empty-state">还没有内容 Brief。</div>}</aside>
         <div className="panel editor-panel">
@@ -93,7 +100,7 @@ export function DraftsPage() {
 
           {selected?.brief && <div className="copy-brief-summary"><span>{selected.brief.coreEmotion}</span><p>{selected.brief.angle}</p><blockquote>{selected.brief.hook}</blockquote></div>}
 
-          <div className="copy-assets-section"><div><label>本次选用素材</label><span>{selectedAssets.length} 张 · 第一张视为封面</span></div>{selectedAssets.length ? <div className="copy-asset-strip">{selectedAssets.map((asset, index) => <div key={asset.id}><span>{index + 1}</span><strong>{asset.tags[0] || asset.originalName}</strong><small>历史使用 {asset.usageCount} 次</small></div>)}</div> : <div className="copy-empty-assets"><FileImage size={18} />请先去素材筛选台选择素材</div>}</div>
+          <div className="copy-assets-section"><div><label>本次选用素材</label><span>{selectedAssets.length} 张 · 第一张视为封面</span></div>{selectedAssets.length ? <div className="copy-asset-strip">{selectedAssets.map((asset, index) => <div key={asset.id}>{asset.previewUrl ? <img src={asset.previewUrl} alt={asset.originalName} /> : <span>{index + 1}</span>}<div><strong>{asset.tags[0] || asset.originalName}</strong><small>{asset.classificationNote || `历史使用 ${asset.usageCount} 次`}</small></div></div>)}</div> : <div className="copy-empty-assets"><FileImage size={18} />请先去素材筛选台选择素材</div>}</div>
 
           <div className="copy-section"><label>标题{version ? ` · 版本 ${version}` : ''}</label><input className="copy-input" value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} placeholder="通过 Brief 并选图后生成" /></div>
           <div className="copy-section"><label>正文草稿</label><textarea className="copy-box multiline copy-textarea" value={draftBody} onChange={(event) => setDraftBody(event.target.value)} placeholder="文案会结合 Brief 的角度、情绪、Hook 和你选中的画面生成。" /></div>
