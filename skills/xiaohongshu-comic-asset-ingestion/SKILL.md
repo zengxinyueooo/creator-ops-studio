@@ -36,7 +36,7 @@ Inspect only enough to reject corrupt or non-image files. Send every valid image
 The default visual model is an explicit part of capture, not a separate manual-review queue. It must return structured metadata for each image. A continuous vertical comic image remains `single` even if it contains several comic panels; use `collage` only when the uploaded image visibly combines two or more independent images with a joining boundary.
 
 - `visual_format`: `single`, `collage`, `uncertain`, or `invalid`.
-- `review_status`: `available` for `single`; `rejected` for `collage` or `invalid`; `pending` only when the model explicitly returns `uncertain`.
+- `review_status`: `available` for `single` or `collage`; `rejected` for `invalid`; `pending` only when the model explicitly returns `uncertain`.
 - `classification_note`: one concise visual description.
 - `content_type`: `cover`, `character`, `interaction`, `plot`, `dialogue`, `atmosphere`, or `other`.
 - two to five deduplicated semantic tags and a bounded confidence value.
@@ -44,7 +44,7 @@ The default visual model is an explicit part of capture, not a separate manual-r
 
 If visual analysis is not configured or fails, stop before asset creation and report the configuration/error. Do not silently create an unlabeled `pending` asset. Existing legacy pending assets can be reanalyzed in one explicit maintenance action.
 
-The model’s result is the initial workflow status. The user may later correct an exceptional result, but the standard card should show the actual analysis labels rather than a mandatory “确认单图” action. A rejected collage is retained for provenance but cannot be added to a Brief.
+The model’s result is the initial workflow status. The user may later use the compact “校正分析” action for an exceptional result, but the standard card should show the actual analysis labels rather than a mandatory “确认单图” action. Both a valid single image and a valid collage may be linked to a Brief; only `invalid` material is blocked.
 
 ## Write to the asset library
 
@@ -74,7 +74,7 @@ After upload:
 1. Confirm the number of stored assets equals the valid downloaded-image count, accounting for deduplicated items.
 2. Reload the asset page and ensure each asset has a working signed preview.
 3. Confirm each preview opens the full original image.
-4. Report the total, model-available single-image count, retained collage count, uncertain count, and any skipped files.
+4. Report the total, model-available asset count, single/collage distribution, uncertain count, and any skipped files.
 
 ## Boundaries
 

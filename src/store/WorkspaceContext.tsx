@@ -64,6 +64,7 @@ interface WorkspaceContextValue {
   createTopicFromReferences: (input: Pick<Topic, 'title' | 'subtitle' | 'pillar' | 'comicId'>, referenceIds: string[]) => Promise<void>
   uploadAssets: (files: File[], metadata: { sourceUrl: string; sourceType: string; workName: string; chapter: string; copyrightStatus: CopyrightStatus; tags: string[]; comicId?: string; topicId?: string; sourceReferenceId?: string; sourceNoteId?: string; sourceNoteTags?: string[]; visualFormat?: AssetVisualFormat; contentType?: AssetContentType; characters?: string[]; classificationNote?: string }) => Promise<void>
   reviewAsset: (assetId: string, visualFormat: AssetVisualFormat, reviewStatus: AssetReviewStatus) => Promise<void>
+  correctAssetAnalysis: (assetId: string, input: Pick<AssetAnalysis, 'visualFormat' | 'contentType' | 'tags' | 'characters' | 'classificationNote'>) => Promise<void>
   analyzePendingAssets: () => Promise<{ analyzed: number; skipped: number }>
   toggleTopicAsset: (topicId: string, assetId: string) => Promise<void>
   markTopicPublished: (topicId: string) => Promise<void>
@@ -679,6 +680,35 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             : topic),
       }))
     },
+    correctAssetAnalysis: async (assetId, input) => {
+      const asset = state.assets.find((item) => item.id === assetId)
+      if (!asset) throw new Error('素材不存在')
+      const analysis: AssetAnalysis = {
+        ...input,
+        reviewStatus: input.visualFormat === 'invalid' ? 'rejected' : input.visualFormat === 'uncertain' ? 'pending' : 'available',
+        confidence: asset.classificationConfidence,
+        model: 'human-correction',
+      }
+      if (dataMode === 'supabase') {
+        await updateCloudAssetAnalysis(assetId, analysis)
+        await reload()
+        return
+      }
+      setState((current) => ({
+        ...current,
+        assets: current.assets.map((item) => item.id === assetId ? {
+          ...item,
+          visualFormat: analysis.visualFormat,
+          reviewStatus: analysis.reviewStatus,
+          tags: analysis.tags,
+          contentType: analysis.contentType,
+          characters: analysis.characters,
+          classificationNote: analysis.classificationNote,
+          topicIds: analysis.visualFormat === 'invalid' ? [] : item.topicIds,
+          topicId: analysis.visualFormat === 'invalid' ? undefined : item.topicId,
+        } : item),
+      }))
+    },
     analyzePendingAssets: async () => {
       const targets = state.assets.filter((asset) => asset.accountId === state.activeAccountId && (asset.reviewStatus === 'pending' || asset.visualFormat === 'uncertain'))
       let analyzed = 0
@@ -721,7 +751,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     toggleTopicAsset: async (topicId, assetId) => {
       const asset = state.assets.find((item) => item.id === assetId)
       if (!asset) throw new Error('素材不存在')
-      if (asset.visualFormat !== 'single' || asset.reviewStatus !== 'available') throw new Error('只有审核通过的单图可以选择')
+      if (asset.visualFormat === 'invalid' || asset.reviewStatus !== 'available') throw new Error('只有视觉分析有效的素材可以选择')
       const selected = !asset.topicIds.includes(topicId)
       const position = state.assets.filter((item) => item.topicIds.includes(topicId)).length
       if (dataMode === 'supabase') {

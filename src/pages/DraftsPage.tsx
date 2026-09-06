@@ -8,7 +8,7 @@ export function DraftsPage() {
   const briefTopics = accountTopics.filter((topic) => topic.brief)
   const [selectedId, setSelectedId] = useState(() => briefTopics.find((topic) => topic.brief?.status === 'approved')?.id ?? briefTopics[0]?.id ?? '')
   const selected = briefTopics.find((topic) => topic.id === selectedId) ?? briefTopics[0]
-  const selectedAssets = useMemo(() => state.assets.filter((asset) => selected && asset.topicIds.includes(selected.id) && asset.visualFormat === 'single' && asset.reviewStatus === 'available'), [selected, state.assets])
+  const selectedAssets = useMemo(() => state.assets.filter((asset) => selected && asset.topicIds.includes(selected.id) && asset.visualFormat !== 'invalid' && asset.reviewStatus === 'available'), [selected, state.assets])
   const [draftTitle, setDraftTitle] = useState('')
   const [draftBody, setDraftBody] = useState('')
   const [version, setVersion] = useState(0)
@@ -19,7 +19,7 @@ export function DraftsPage() {
 
   async function generateDraft() {
     if (!selected?.brief || selected.brief.status !== 'approved' || !selectedAssets.length) {
-      setMessage('需要先通过 Brief，并至少选择一张可用单图素材。')
+      setMessage('需要先通过 Brief，并至少选择一张可用素材。')
       return
     }
     const visualCue = selectedAssets.slice(0, 3).map((asset) => asset.tags[0] || asset.contentType).join('、')
@@ -93,12 +93,12 @@ export function DraftsPage() {
 
           {selected?.brief && <div className="copy-brief-summary"><span>{selected.brief.coreEmotion}</span><p>{selected.brief.angle}</p><blockquote>{selected.brief.hook}</blockquote></div>}
 
-          <div className="copy-assets-section"><div><label>本次选用素材</label><span>{selectedAssets.length} 张 · 第一张视为封面</span></div>{selectedAssets.length ? <div className="copy-asset-strip">{selectedAssets.map((asset, index) => <div key={asset.id}><span>{index + 1}</span><strong>{asset.tags[0] || asset.originalName}</strong><small>历史使用 {asset.usageCount} 次</small></div>)}</div> : <div className="copy-empty-assets"><FileImage size={18} />请先去素材筛选台选择单图</div>}</div>
+          <div className="copy-assets-section"><div><label>本次选用素材</label><span>{selectedAssets.length} 张 · 第一张视为封面</span></div>{selectedAssets.length ? <div className="copy-asset-strip">{selectedAssets.map((asset, index) => <div key={asset.id}><span>{index + 1}</span><strong>{asset.tags[0] || asset.originalName}</strong><small>历史使用 {asset.usageCount} 次</small></div>)}</div> : <div className="copy-empty-assets"><FileImage size={18} />请先去素材筛选台选择素材</div>}</div>
 
           <div className="copy-section"><label>标题{version ? ` · 版本 ${version}` : ''}</label><input className="copy-input" value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} placeholder="通过 Brief 并选图后生成" /></div>
           <div className="copy-section"><label>正文草稿</label><textarea className="copy-box multiline copy-textarea" value={draftBody} onChange={(event) => setDraftBody(event.target.value)} placeholder="文案会结合 Brief 的角度、情绪、Hook 和你选中的画面生成。" /></div>
 
-          <div className="review-checks"><span><CheckCircle2 size={15} />只使用审核通过的 Brief</span><span><CheckCircle2 size={15} />拼图与待确认素材已拦截</span><span><MessageSquareText size={15} />允许复用，但展示历史次数</span></div>
+          <div className="review-checks"><span><CheckCircle2 size={15} />只使用审核通过的 Brief</span><span><CheckCircle2 size={15} />使用视觉分析有效的素材</span><span><MessageSquareText size={15} />允许复用，但展示历史次数</span></div>
           {message && <p className="draft-message">{message}</p>}
           <div className="editor-footer"><span>{version ? `${generationLabel || '草稿'} · v${version}` : '等待生成文案'}</span><button className="primary-button" disabled={!draftBody || publishing || selected?.status === 'published'} onClick={() => void confirmPublished()}>{selected?.status === 'published' ? <CheckCircle2 size={17} /> : <Send size={17} />}{selected?.status === 'published' ? '已记录发布' : publishing ? '正在保存…' : '标记已发布'}</button></div>
         </div>

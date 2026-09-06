@@ -43,7 +43,7 @@ export async function analyzeComicAsset(file: File) {
   const confidence = Number.isFinite(confidenceValue) ? Math.max(0, Math.min(1, confidenceValue)) : undefined
   return {
     visualFormat,
-    reviewStatus: visualFormat === 'single' ? 'available' : visualFormat === 'collage' || visualFormat === 'invalid' ? 'rejected' : 'pending',
+    reviewStatus: visualFormat === 'invalid' ? 'rejected' : visualFormat === 'uncertain' ? 'pending' : 'available',
     contentType,
     tags: cleanList(result.data.tags, 5),
     characters: cleanList(result.data.characters, 4),
