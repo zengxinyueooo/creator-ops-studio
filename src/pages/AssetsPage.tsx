@@ -219,6 +219,7 @@ export function AssetsPage() {
       {assets.length ? <section className="asset-grid">{assets.map((asset, index) => {
         const selected = Boolean(selectedTopicId && asset.topicIds.includes(selectedTopicId))
         const selectable = asset.visualFormat !== 'invalid' && asset.reviewStatus === 'available'
+        const waitingForAnalysis = asset.visualFormat === 'uncertain' || asset.reviewStatus === 'pending'
         return <article className={`asset-card ${selected ? 'selected' : ''}`} key={asset.id}>
           <div className={`asset-cover ${['pink', 'blue', 'purple', 'amber'][index % 4]} ${asset.visualFormat === 'collage' && !asset.previewUrl ? 'collage-preview' : ''} ${asset.previewUrl ? 'is-previewable' : ''}`} role={asset.previewUrl ? 'button' : undefined} tabIndex={asset.previewUrl ? 0 : undefined} aria-label={asset.previewUrl ? `查看${asset.originalName}原图` : undefined} onClick={() => asset.previewUrl && setPreviewAsset(asset)} onKeyDown={(event) => { if (asset.previewUrl && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setPreviewAsset(asset) } }}>{asset.previewUrl ? <img src={asset.previewUrl} alt={asset.originalName} /> : asset.visualFormat === 'collage' ? <><span>1</span><span>2</span></> : <><span>{index + 1}</span><FileImage size={24} /></>}</div>
           <div className="asset-card-copy">
@@ -236,6 +237,8 @@ export function AssetsPage() {
             </div> : <div className="asset-analysis-actions"><button type="button" disabled={busyAssetId === asset.id} onClick={() => void rerunAnalysis(asset.id)}>{busyAssetId === asset.id ? '正在分析…' : '重新 AI 分析'}</button><button className="asset-correct-button" type="button" onClick={() => openAnalysisEditor(asset)}>手动校正</button></div>}
             <div className="usage-line"><span><RefreshCw size={12} />使用 {asset.usageCount} 次{asset.lastUsedAt ? ` · 最近 ${asset.lastUsedAt}` : ''}</span>{asset.coverUsageCount > 0 && <span>封面 {asset.coverUsageCount} 次</span>}</div>
             {selectable && <button className={`asset-select-button ${selected ? 'selected' : ''}`} disabled={busyAssetId === asset.id || !selectedTopicId} onClick={() => void toggleSelection(asset.id)}>{selected ? <Check size={15} /> : <Layers3 size={15} />}{selected ? '已加入当前 Brief' : selectedTopicId ? '加入当前 Brief' : '先选择 Brief'}</button>}
+            {waitingForAnalysis && <button className="asset-select-button" type="button" disabled><Sparkles size={15} />等待自动打标后可选</button>}
+            {!selectable && !waitingForAnalysis && asset.visualFormat !== 'invalid' && <p className="asset-unavailable-note">请重新 AI 分析或手动校正后再选择</p>}
             <div className="asset-source-line"><span><Link2 size={12} />{asset.sourceType === 'xiaohongshu' ? '小红书参考' : asset.sourceType}</span></div>
           </div>
         </article>
