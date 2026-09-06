@@ -20,9 +20,9 @@ describe('demo workspace', () => {
     expect(demoState.researchTasks.every((task) => demoState.comics.some((comic) => comic.id === task.comicId))).toBe(true)
   })
 
-  it('only links selectable single-image assets to topics', () => {
+  it('only links selectable analyzed assets to topics', () => {
     const linkedAssets = demoState.assets.filter((asset) => asset.topicIds.length > 0)
-    expect(linkedAssets.every((asset) => asset.visualFormat === 'single' && asset.reviewStatus === 'available')).toBe(true)
+    expect(linkedAssets.every((asset) => asset.visualFormat !== 'invalid' && asset.reviewStatus === 'available')).toBe(true)
     for (const topic of demoState.topics) {
       const linkedCount = demoState.assets.filter((asset) => asset.topicIds.includes(topic.id)).length
       if (linkedCount > 0) expect(topic.assetCount).toBe(linkedCount)

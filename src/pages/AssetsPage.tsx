@@ -23,7 +23,7 @@ const contentTypeLabels: Record<AssetContentType, string> = {
 }
 
 export function AssetsPage() {
-  const { activeAccount, accountTopics, state, uploadAssets, analyzePendingAssets, toggleTopicAsset } = useWorkspace()
+  const { activeAccount, accountTopics, state, uploadAssets, correctAssetAnalysis, reanalyzeAsset, analyzePendingAssets, toggleTopicAsset } = useWorkspace()
   const [searchParams, setSearchParams] = useSearchParams()
   const fileInput = useRef<HTMLInputElement>(null)
   const briefTopics = accountTopics.filter((topic) => topic.brief?.status === 'approved')
@@ -50,6 +50,12 @@ export function AssetsPage() {
   const [busyAssetId, setBusyAssetId] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [previewAsset, setPreviewAsset] = useState<AssetItem | null>(null)
+  const [editingAssetId, setEditingAssetId] = useState<string | null>(null)
+  const [editFormat, setEditFormat] = useState<AssetVisualFormat>('single')
+  const [editContentType, setEditContentType] = useState<AssetContentType>('other')
+  const [editTags, setEditTags] = useState('')
+  const [editCharacters, setEditCharacters] = useState('')
+  const [editNote, setEditNote] = useState('')
 
   useEffect(() => {
     if (!previewAsset) return
@@ -70,7 +76,7 @@ export function AssetsPage() {
     return matchesComic && matchesQuery && (!singleOnly || asset.visualFormat === 'single')
   })
   const selectedCount = allAssets.filter((asset) => selectedTopicId && asset.topicIds.includes(selectedTopicId)).length
-  const eligibleCount = allAssets.filter((asset) => (!selectedTopic?.comicId || asset.comicId === selectedTopic.comicId) && asset.visualFormat === 'single' && asset.reviewStatus === 'available').length
+  const eligibleCount = allAssets.filter((asset) => (!selectedTopic?.comicId || asset.comicId === selectedTopic.comicId) && asset.visualFormat !== 'invalid' && asset.reviewStatus === 'available').length
   const pendingAnalysisCount = allAssets.filter((asset) => asset.reviewStatus === 'pending' || asset.visualFormat === 'uncertain').length
 
   function selectBrief(topicId: string) {
@@ -113,8 +119,8 @@ export function AssetsPage() {
     setAnalyzing(true)
     setError('')
     try {
-      const result = await analyzePendingAssets()
-      setError(result.skipped ? `已分析 ${result.analyzed} 张；${result.skipped} 张因缺少原图而跳过。` : `已完成 ${result.analyzed} 张历史素材的视觉分析。`)
+      const result = await analyzePendingAssets(1)
+      setError(result.skipped ? '这张历史素材缺少可读取的原图，已跳过。' : '已完成一张历史素材的视觉分析。')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '图片分析失败')
     } finally {
@@ -142,14 +148,54 @@ export function AssetsPage() {
     }
   }
 
+  function openAnalysisEditor(asset: AssetItem) {
+    setEditingAssetId(asset.id)
+    setEditFormat(asset.visualFormat)
+    setEditContentType(asset.contentType)
+    setEditTags(asset.tags.join('，'))
+    setEditCharacters(asset.characters.join('，'))
+    setEditNote(asset.classificationNote)
+  }
+
+  async function saveAnalysisCorrection(assetId: string) {
+    setBusyAssetId(assetId)
+    setError('')
+    try {
+      await correctAssetAnalysis(assetId, {
+        visualFormat: editFormat,
+        contentType: editContentType,
+        tags: [...new Set(editTags.split(/[，,\s]+/).map((tag) => tag.trim().replace(/^#/, '')).filter(Boolean))].slice(0, 5),
+        characters: [...new Set(editCharacters.split(/[，,\s]+/).map((name) => name.trim()).filter(Boolean))].slice(0, 4),
+        classificationNote: editNote.trim().slice(0, 64),
+      })
+      setEditingAssetId(null)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '保存素材分析失败')
+    } finally {
+      setBusyAssetId(null)
+    }
+  }
+
+  async function rerunAnalysis(assetId: string) {
+    setBusyAssetId(assetId)
+    setError('')
+    try {
+      await reanalyzeAsset(assetId)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '重新分析失败')
+    } finally {
+      setBusyAssetId(null)
+    }
+  }
+
   return (
     <>
-      <section className="page-heading compact-heading"><div><span className="eyebrow">ASSET LIBRARY</span><h1>素材筛选台</h1><p>每张图片采集后自动完成图型、内容类型和标签分析；连续单图可直接加入已通过的 Brief。</p></div><div className="button-row">{pendingAnalysisCount > 0 && <button className="secondary-button" disabled={analyzing} onClick={() => void runPendingAnalysis()}><Sparkles size={16} />{analyzing ? '正在分析…' : `分析历史素材 ${pendingAnalysisCount}`}</button>}<button className="primary-button" onClick={() => setShowUpload((value) => !value)}>{showUpload ? <X size={17} /> : <Upload size={17} />}{showUpload ? '关闭' : '上传素材'}</button></div></section>
+      <section className="page-heading compact-heading"><div><span className="eyebrow">ASSET LIBRARY</span><h1>素材筛选台</h1><p>每张图片采集后自动完成图型、内容类型和标签分析；单图和拼图都可作为 Brief 素材，只有无效图片会被拦截。</p></div><div className="button-row">{pendingAnalysisCount > 0 && <button className="secondary-button" disabled={analyzing} onClick={() => void runPendingAnalysis()}><Sparkles size={16} />{analyzing ? '正在分析…' : `分析下一张历史素材（余 ${pendingAnalysisCount}）`}</button>}<button className="primary-button" onClick={() => setShowUpload((value) => !value)}>{showUpload ? <X size={17} /> : <Upload size={17} />}{showUpload ? '关闭' : '上传素材'}</button></div></section>
 
       <section className="asset-brief-bar panel tint-sky">
         <div><label>当前内容 Brief</label><PillSelect value={selectedTopicId} ariaLabel="当前内容 Brief" placeholder="选择 Brief" options={[{ value: '', label: '选择 Brief' }, ...briefTopics.map((topic) => ({ value: topic.id, label: topic.title }))]} onChange={selectBrief} /></div>
         <div className="asset-brief-stat"><strong>{selectedCount}</strong><span>已选素材</span></div>
-        <div className="asset-brief-stat"><strong>{eligibleCount}</strong><span>可用单图</span></div>
+        <div className="asset-brief-stat"><strong>{eligibleCount}</strong><span>可用素材</span></div>
         <div className="brief-guidance-row">{selectedComic && <span className="guidance-chip comic">《{selectedComic.title}》</span>}{(selectedTopic?.brief ? selectedTopic.brief.assetGuidance : ['先在选题工作流中生成并通过 Brief']).map((item) => <span key={item} className="guidance-chip">{item}</span>)}</div>
         <span className={`status-badge ${selectedTopic?.brief?.status === 'approved' ? 'green' : 'amber'}`}>{selectedTopic?.brief?.status === 'approved' ? 'Brief 已通过' : '请选择已通过的 Brief'}</span>
       </section>
@@ -165,7 +211,7 @@ export function AssetsPage() {
           <label className="wide">来源链接<input type="url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="原始页面地址，建议填写" /></label>
         </div>
         {error && <p className="research-error">{error}</p>}
-        <div className="asset-upload-footer"><span><ShieldCheck size={14} />单图自动成为可选素材；拼图仍会保留在素材库中</span><button className="primary-button" type="submit" disabled={uploading}>{uploading ? '正在分析并上传…' : `确认上传${files.length ? ` ${files.length} 张` : ''}`}</button></div>
+        <div className="asset-upload-footer"><span><ShieldCheck size={14} />分析有效的单图和拼图都可用于 Brief；仅无效图片会被拦截</span><button className="primary-button" type="submit" disabled={uploading}>{uploading ? '正在分析并上传…' : `确认上传${files.length ? ` ${files.length} 张` : ''}`}</button></div>
       </form>}
 
       {error && !showUpload && <p className="research-error">{error}</p>}
@@ -173,7 +219,7 @@ export function AssetsPage() {
 
       {assets.length ? <section className="asset-grid">{assets.map((asset, index) => {
         const selected = Boolean(selectedTopicId && asset.topicIds.includes(selectedTopicId))
-        const selectable = asset.visualFormat === 'single' && asset.reviewStatus === 'available'
+        const selectable = asset.visualFormat !== 'invalid' && asset.reviewStatus === 'available'
         return <article className={`asset-card ${selected ? 'selected' : ''}`} key={asset.id}>
           <div className={`asset-cover ${['pink', 'blue', 'purple', 'amber'][index % 4]} ${asset.visualFormat === 'collage' && !asset.previewUrl ? 'collage-preview' : ''} ${asset.previewUrl ? 'is-previewable' : ''}`} role={asset.previewUrl ? 'button' : undefined} tabIndex={asset.previewUrl ? 0 : undefined} aria-label={asset.previewUrl ? `查看${asset.originalName}原图` : undefined} onClick={() => asset.previewUrl && setPreviewAsset(asset)} onKeyDown={(event) => { if (asset.previewUrl && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setPreviewAsset(asset) } }}>{asset.previewUrl ? <img src={asset.previewUrl} alt={asset.originalName} /> : asset.visualFormat === 'collage' ? <><span>1</span><span>2</span></> : <><span>{index + 1}</span><FileImage size={24} /></>}</div>
           <div className="asset-card-copy">
@@ -181,9 +227,16 @@ export function AssetsPage() {
             <h3>{[asset.workName, asset.chapter].filter(Boolean).join(' · ') || asset.originalName}</h3>
             {asset.characters.length > 0 && <div className="asset-people-row">{asset.characters.map((character) => <span className="character-chip" key={character}>{character}</span>)}</div>}
             {asset.tags.length > 0 && <div className="asset-tags" aria-label="素材标签">{[...new Set(asset.tags)].slice(0, 4).map((tag) => <button className={query.trim() === tag ? 'active' : ''} type="button" key={tag} onClick={() => setQuery(tag)} aria-label={`按标签 ${tag} 筛选`}>#{tag}</button>)}</div>}
-            {asset.classificationNote && <p className="classification-note">AI 识别：{asset.classificationNote}</p>}
+            {asset.classificationNote && <p className="classification-note">内容语义：{asset.classificationNote}</p>}
+            {editingAssetId === asset.id ? <div className="asset-edit-panel">
+              <div className="asset-edit-grid"><div><span>图型</span><PillSelect value={editFormat} ariaLabel="校正图型" options={Object.entries(visualLabels).map(([value, label]) => ({ value, label }))} onChange={(value) => setEditFormat(value as AssetVisualFormat)} /></div><div><span>类型</span><PillSelect value={editContentType} ariaLabel="校正内容类型" options={Object.entries(contentTypeLabels).map(([value, label]) => ({ value, label }))} onChange={(value) => setEditContentType(value as AssetContentType)} /></div></div>
+              <input value={editTags} onChange={(event) => setEditTags(event.target.value)} placeholder="标签，用逗号分隔" aria-label="校正标签" />
+              <input value={editCharacters} onChange={(event) => setEditCharacters(event.target.value)} placeholder="角色名，用逗号分隔" aria-label="校正角色" />
+              <input value={editNote} onChange={(event) => setEditNote(event.target.value)} placeholder="简短画面说明" aria-label="校正画面说明" />
+              <div className="asset-review-actions"><button type="button" onClick={() => setEditingAssetId(null)}>取消</button><button type="button" disabled={busyAssetId === asset.id} onClick={() => void saveAnalysisCorrection(asset.id)}>保存校正</button></div>
+            </div> : <div className="asset-analysis-actions"><button type="button" disabled={busyAssetId === asset.id} onClick={() => void rerunAnalysis(asset.id)}>{busyAssetId === asset.id ? '正在分析…' : '重新 AI 分析'}</button><button className="asset-correct-button" type="button" onClick={() => openAnalysisEditor(asset)}>手动校正</button></div>}
             <div className="usage-line"><span><RefreshCw size={12} />使用 {asset.usageCount} 次{asset.lastUsedAt ? ` · 最近 ${asset.lastUsedAt}` : ''}</span>{asset.coverUsageCount > 0 && <span>封面 {asset.coverUsageCount} 次</span>}</div>
-            {selectable && <button className={`asset-select-button ${selected ? 'selected' : ''}`} disabled={busyAssetId === asset.id || !selectedTopicId} onClick={() => void toggleSelection(asset.id)}>{selected ? <Check size={15} /> : <Layers3 size={15} />}{selected ? '已加入当前 Brief' : '加入当前 Brief'}</button>}
+            {selectable && <button className={`asset-select-button ${selected ? 'selected' : ''}`} disabled={busyAssetId === asset.id || !selectedTopicId} onClick={() => void toggleSelection(asset.id)}>{selected ? <Check size={15} /> : <Layers3 size={15} />}{selected ? '已加入当前 Brief' : selectedTopicId ? '加入当前 Brief' : '先选择 Brief'}</button>}
             <div className="asset-source-line"><span><Link2 size={12} />{asset.sourceType === 'xiaohongshu' ? '小红书参考' : asset.sourceType}</span></div>
           </div>
         </article>
