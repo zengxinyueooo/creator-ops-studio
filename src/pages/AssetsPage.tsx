@@ -1,4 +1,4 @@
-import { Check, FileImage, Layers3, Link2, RefreshCw, Search, ShieldCheck, Sparkles, Upload, X } from 'lucide-react'
+import { Check, FileImage, Layers3, PencilLine, RefreshCw, Search, ShieldCheck, Sparkles, Upload, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { PillSelect } from '../components/PillSelect'
@@ -227,17 +227,16 @@ export function AssetsPage() {
             <h3>{[asset.workName, asset.chapter].filter(Boolean).join(' · ') || asset.originalName}</h3>
             {asset.characters.length > 0 && <div className="asset-people-row">{asset.characters.map((character) => <span className="character-chip" key={character}>{character}</span>)}</div>}
             {asset.tags.length > 0 && <div className="asset-tags" aria-label="素材标签">{[...new Set(asset.tags)].slice(0, 4).map((tag) => <button className={query.trim() === tag ? 'active' : ''} type="button" key={tag} onClick={() => setQuery(tag)} aria-label={`按标签 ${tag} 筛选`}>#{tag}</button>)}</div>}
-            {asset.classificationNote && <p className="classification-note">内容语义：{asset.classificationNote}</p>}
+            {asset.classificationNote && <p className="classification-note"><span className="semantic-tag"><Sparkles size={11} />内容语义</span>{asset.classificationNote}</p>}
             {editingAssetId === asset.id ? <div className="asset-edit-panel">
               <div className="asset-edit-grid"><div><span>图型</span><PillSelect value={editFormat} ariaLabel="校正图型" options={Object.entries(visualLabels).map(([value, label]) => ({ value, label }))} onChange={(value) => setEditFormat(value as AssetVisualFormat)} /></div><div><span>类型</span><PillSelect value={editContentType} ariaLabel="校正内容类型" options={Object.entries(contentTypeLabels).map(([value, label]) => ({ value, label }))} onChange={(value) => setEditContentType(value as AssetContentType)} /></div></div>
               <input value={editTags} onChange={(event) => setEditTags(event.target.value)} placeholder="标签，用逗号分隔" aria-label="校正标签" />
               <input value={editCharacters} onChange={(event) => setEditCharacters(event.target.value)} placeholder="角色名，用逗号分隔" aria-label="校正角色" />
               <input value={editNote} onChange={(event) => setEditNote(event.target.value)} placeholder="简短画面说明" aria-label="校正画面说明" />
               <div className="asset-review-actions"><button type="button" onClick={() => setEditingAssetId(null)}>取消</button><button type="button" disabled={busyAssetId === asset.id} onClick={() => void saveAnalysisCorrection(asset.id)}>保存校正</button></div>
-            </div> : <div className="asset-analysis-actions"><button type="button" disabled={busyAssetId === asset.id} onClick={() => void rerunAnalysis(asset.id)}>{busyAssetId === asset.id ? '正在分析…' : '重新 AI 分析'}</button><button className="asset-correct-button" type="button" onClick={() => openAnalysisEditor(asset)}>手动校正</button></div>}
+            </div> : <div className="asset-analysis-actions"><button className="asset-ai-button" type="button" disabled={busyAssetId === asset.id} onClick={() => void rerunAnalysis(asset.id)}>{busyAssetId === asset.id ? '正在分析…' : <><Sparkles size={13} />重新 AI 分析</>}</button><button className="asset-correct-button" type="button" onClick={() => openAnalysisEditor(asset)}><PencilLine size={13} />手动校正</button></div>}
             <div className="usage-line"><span><RefreshCw size={12} />使用 {asset.usageCount} 次{asset.lastUsedAt ? ` · 最近 ${asset.lastUsedAt}` : ''}</span>{asset.coverUsageCount > 0 && <span>封面 {asset.coverUsageCount} 次</span>}</div>
             {selectable && <button className={`asset-select-button ${selected ? 'selected' : ''}`} disabled={busyAssetId === asset.id || !selectedTopicId} onClick={() => void toggleSelection(asset.id)}>{selected ? <Check size={15} /> : <Layers3 size={15} />}{selected ? '已加入当前 Brief' : selectedTopicId ? '加入当前 Brief' : '先选择 Brief'}</button>}
-            <div className="asset-source-line"><span><Link2 size={12} />{asset.sourceType === 'xiaohongshu' ? '小红书参考' : asset.sourceType}</span></div>
           </div>
         </article>
       })}</section> : <div className="panel empty-state tall">当前筛选条件下没有素材。</div>}
