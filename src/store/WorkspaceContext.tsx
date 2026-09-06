@@ -772,8 +772,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     markTopicPublished: async (topicId) => {
       const topic = state.topics.find((item) => item.id === topicId)
       if (!topic) throw new Error('选题不存在')
-      const selectedAssets = state.assets.filter((asset) => asset.topicIds.includes(topicId) && asset.visualFormat === 'single' && asset.reviewStatus === 'available')
-      if (!selectedAssets.length) throw new Error('请先为这个 Brief 选择至少一张单图素材')
+      const selectedAssets = state.assets.filter((asset) => asset.topicIds.includes(topicId) && asset.visualFormat !== 'invalid' && asset.reviewStatus === 'available')
+      if (!selectedAssets.length) throw new Error('请先为这个 Brief 选择至少一张可用素材')
       if (dataMode === 'supabase') {
         await markCloudTopicPublished(topicId)
         await reload()
