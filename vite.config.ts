@@ -17,7 +17,7 @@ type RawNote = { title?: unknown; author?: unknown; likes?: unknown; url?: unkno
 type DownloadedImage = { filename: string; path: string; mimeType: string; byteSize: number }
 type CaptureFile = DownloadedImage & { expiresAt: number }
 type LocalAiInput = { system?: unknown; prompt?: unknown; maxTokens?: unknown; temperature?: unknown }
-type LocalVisionInput = LocalAiInput & { imageDataUrl?: unknown }
+type LocalVisionInput = LocalAiInput & { imageDataUrl?: unknown; formatRetry?: unknown }
 
 function parseMetric(value: unknown) {
   const text = String(value ?? '0').trim().replace(/,/g, '')
@@ -418,11 +418,13 @@ function localSiliconFlowPlugin(env: Record<string, string>) {
     imageDataUrl?: string
     jsonMode?: boolean
     disableThinking?: boolean
+    maxAttempts?: number
   }) => {
     const messages = input.imageDataUrl
       ? [{ role: 'system', content: input.system }, { role: 'user', content: [{ type: 'image_url', image_url: { url: input.imageDataUrl, detail: 'low' } }, { type: 'text', text: input.prompt }] }]
       : [{ role: 'system', content: input.system }, { role: 'user', content: input.prompt }]
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    const maxAttempts = Math.max(1, Math.min(2, input.maxAttempts ?? 2))
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       try {
         const response = await fetch('https://api.siliconflow.cn/v1/chat/completions', {
           method: 'POST',
@@ -460,7 +462,7 @@ function localSiliconFlowPlugin(env: Record<string, string>) {
         const failure = caught instanceof SiliconFlowRequestError
           ? caught
           : new SiliconFlowRequestError('硅基流动连接超时或网络异常，请重试', undefined, true)
-        if (!failure.retryable || attempt === 1) throw failure
+        if (!failure.retryable || attempt === maxAttempts - 1) throw failure
         await waitForRetry(600 * (attempt + 1))
       }
     }
@@ -525,19 +527,20 @@ function localSiliconFlowPlugin(env: Record<string, string>) {
           const system = String(input.system ?? '').trim()
           const prompt = String(input.prompt ?? '').trim()
           const imageDataUrl = String(input.imageDataUrl ?? '').trim()
+          const formatRetry = input.formatRetry === true
           if (!system || !prompt || !/^data:image\/(?:jpeg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(imageDataUrl)) throw new Error('图片分析请求缺少有效图片或提示词')
           // SiliconFlow's vision models do not support response_format JSON Mode.
           // The prompt asks for JSON and the client validates the returned structure instead.
           let usedVisionModel = visionModel
           let content: string
           try {
-            content = await requestCompletion({ system, prompt, imageDataUrl, maxTokens: 350, temperature: 0.2, model: visionModel, disableThinking: true })
+            content = await requestCompletion({ system, prompt, imageDataUrl, maxTokens: 350, temperature: 0.2, model: visionModel, disableThinking: true, maxAttempts: formatRetry ? 1 : 2 })
           } catch (caught) {
             const failure = caught instanceof SiliconFlowRequestError ? caught : undefined
-            const canFallback = visionFallbackModel !== visionModel && (failure?.status === 404 || failure?.status === 503)
+            const canFallback = !formatRetry && visionFallbackModel !== visionModel && (failure?.status === 404 || failure?.status === 503)
             if (!canFallback) throw caught
             usedVisionModel = visionFallbackModel
-            content = await requestCompletion({ system, prompt, imageDataUrl, maxTokens: 350, temperature: 0.2, model: visionFallbackModel, disableThinking: true })
+            content = await requestCompletion({ system, prompt, imageDataUrl, maxTokens: 350, temperature: 0.2, model: visionFallbackModel, disableThinking: true, maxAttempts: 1 })
           }
           res.statusCode = 200
           res.end(JSON.stringify({ content, model: usedVisionModel }))

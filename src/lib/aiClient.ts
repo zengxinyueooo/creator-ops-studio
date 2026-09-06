@@ -102,6 +102,7 @@ export async function generateAiVisionJson<T extends object>(input: { file: File
       body: JSON.stringify({
         ...request,
         imageDataUrl,
+        formatRetry: formatAttempt === 1,
         ...(formatAttempt === 1 ? { prompt: `${request.prompt}\n上一次输出无法被系统读取。这次只能返回一个合法 JSON 对象，不要 Markdown、解释或额外文字。` } : {}),
       }),
     })
