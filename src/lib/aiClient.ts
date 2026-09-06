@@ -95,18 +95,29 @@ export async function generateAiVisionJson<T extends object>(input: { file: File
   if (!file.type.startsWith('image/')) throw new AiGenerationError('只能分析图片文件')
   if (file.size > 15 * 1024 * 1024) throw new AiGenerationError('图片超过 15MB，无法分析')
   const imageDataUrl = await asDataUrl(file)
-  const response = await fetch('/api/ai/vision', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Creator-Ops-Bridge': '1' },
-    body: JSON.stringify({ ...request, imageDataUrl }),
-  })
-  const payload = await response.json().catch(() => null) as unknown
-  if (!response.ok) {
-    const message = messageFromPayload(payload)
-    throw new AiGenerationError(message.error || '图片分析失败', message.code)
+  for (let formatAttempt = 0; formatAttempt < 2; formatAttempt += 1) {
+    const response = await fetch('/api/ai/vision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Creator-Ops-Bridge': '1' },
+      body: JSON.stringify({
+        ...request,
+        imageDataUrl,
+        ...(formatAttempt === 1 ? { prompt: `${request.prompt}\n上一次输出无法被系统读取。这次只能返回一个合法 JSON 对象，不要 Markdown、解释或额外文字。` } : {}),
+      }),
+    })
+    const payload = await response.json().catch(() => null) as unknown
+    if (!response.ok) {
+      const message = messageFromPayload(payload)
+      throw new AiGenerationError(message.error || '图片分析失败', message.code)
+    }
+    if (!payload || typeof payload !== 'object' || typeof (payload as { content?: unknown }).content !== 'string' || typeof (payload as { model?: unknown }).model !== 'string') {
+      throw new AiGenerationError('图片分析返回格式异常')
+    }
+    try {
+      return { data: parseAiJson<T>((payload as { content: string }).content), model: (payload as { model: string }).model }
+    } catch (caught) {
+      if (formatAttempt === 1 || !(caught instanceof AiGenerationError)) throw caught
+    }
   }
-  if (!payload || typeof payload !== 'object' || typeof (payload as { content?: unknown }).content !== 'string' || typeof (payload as { model?: unknown }).model !== 'string') {
-    throw new AiGenerationError('图片分析返回格式异常')
-  }
-  return { data: parseAiJson<T>((payload as { content: string }).content), model: (payload as { model: string }).model }
+  throw new AiGenerationError('模型返回的结构不符合预期，请重试生成')
 }

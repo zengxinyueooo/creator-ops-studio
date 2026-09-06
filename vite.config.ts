@@ -395,10 +395,20 @@ function localOpenCliPlugin() {
   }
 }
 
+class SiliconFlowRequestError extends Error {
+  constructor(message: string, readonly status?: number, readonly retryable = false) {
+    super(message)
+    this.name = 'SiliconFlowRequestError'
+  }
+}
+
+const waitForRetry = (milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
+
 function localSiliconFlowPlugin(env: Record<string, string>) {
   const apiKey = env.SILICONFLOW_API_KEY?.trim()
   const model = env.SILICONFLOW_MODEL?.trim() || 'Qwen/Qwen3.5-35B-A3B'
   const visionModel = env.SILICONFLOW_VISION_MODEL?.trim() || 'zai-org/GLM-4.5V'
+  const visionFallbackModel = env.SILICONFLOW_VISION_FALLBACK_MODEL?.trim() || 'Qwen/Qwen3.6-35B-A3B'
   const requestCompletion = async (input: {
     system: string
     prompt: string
@@ -412,36 +422,49 @@ function localSiliconFlowPlugin(env: Record<string, string>) {
     const messages = input.imageDataUrl
       ? [{ role: 'system', content: input.system }, { role: 'user', content: [{ type: 'image_url', image_url: { url: input.imageDataUrl, detail: 'low' } }, { type: 'text', text: input.prompt }] }]
       : [{ role: 'system', content: input.system }, { role: 'user', content: input.prompt }]
-    const response = await fetch('https://api.siliconflow.cn/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: input.model,
-        messages,
-        temperature: input.temperature,
-        max_tokens: input.maxTokens,
-        ...(input.jsonMode ? { response_format: { type: 'json_object' } } : {}),
-        ...(input.disableThinking ? { enable_thinking: false } : {}),
-      }),
-      signal: AbortSignal.timeout(75_000),
-    })
-    const payload = await response.json() as {
-      choices?: Array<{ finish_reason?: unknown; message?: { content?: unknown; reasoning_content?: unknown } }>
-      error?: { message?: unknown } | string
-      message?: unknown
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const response = await fetch('https://api.siliconflow.cn/v1/chat/completions', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: input.model,
+            messages,
+            temperature: input.temperature,
+            max_tokens: input.maxTokens,
+            ...(input.jsonMode ? { response_format: { type: 'json_object' } } : {}),
+            ...(input.disableThinking ? { enable_thinking: false } : {}),
+          }),
+          signal: AbortSignal.timeout(75_000),
+        })
+        const payload = await response.json().catch(() => ({})) as {
+          choices?: Array<{ message?: { content?: unknown } }>
+          error?: { message?: unknown } | string
+          message?: unknown
+        }
+        const providerError = typeof payload.error === 'string'
+          ? payload.error
+          : typeof payload.error?.message === 'string'
+            ? payload.error.message
+            : typeof payload.message === 'string'
+              ? payload.message
+              : ''
+        if (!response.ok) {
+          const retryable = response.status === 408 || response.status === 409 || response.status === 429 || response.status >= 500
+          throw new SiliconFlowRequestError(providerError || `硅基流动请求失败（${response.status}）`, response.status, retryable)
+        }
+        const content = payload.choices?.[0]?.message?.content
+        if (typeof content !== 'string' || !content.trim()) throw new SiliconFlowRequestError('硅基流动未返回可用内容', response.status, true)
+        return content
+      } catch (caught) {
+        const failure = caught instanceof SiliconFlowRequestError
+          ? caught
+          : new SiliconFlowRequestError('硅基流动连接超时或网络异常，请重试', undefined, true)
+        if (!failure.retryable || attempt === 1) throw failure
+        await waitForRetry(600 * (attempt + 1))
+      }
     }
-    const providerError = typeof payload.error === 'string'
-      ? payload.error
-      : typeof payload.error?.message === 'string'
-        ? payload.error.message
-        : typeof payload.message === 'string'
-          ? payload.message
-          : ''
-    if (!response.ok) throw new Error(providerError || `硅基流动请求失败（${response.status}）`)
-    const choice = payload.choices?.[0]
-    const content = choice?.message?.content
-    if (typeof content !== 'string' || !content.trim()) throw new Error('硅基流动未返回可用内容')
-    return content
+    throw new SiliconFlowRequestError('硅基流动请求失败')
   }
   return {
     name: 'local-siliconflow-ai-bridge',
@@ -505,9 +528,19 @@ function localSiliconFlowPlugin(env: Record<string, string>) {
           if (!system || !prompt || !/^data:image\/(?:jpeg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(imageDataUrl)) throw new Error('图片分析请求缺少有效图片或提示词')
           // SiliconFlow's vision models do not support response_format JSON Mode.
           // The prompt asks for JSON and the client validates the returned structure instead.
-          const content = await requestCompletion({ system, prompt, imageDataUrl, maxTokens: 350, temperature: 0.2, model: visionModel, disableThinking: true })
+          let usedVisionModel = visionModel
+          let content: string
+          try {
+            content = await requestCompletion({ system, prompt, imageDataUrl, maxTokens: 350, temperature: 0.2, model: visionModel, disableThinking: true })
+          } catch (caught) {
+            const failure = caught instanceof SiliconFlowRequestError ? caught : undefined
+            const canFallback = visionFallbackModel !== visionModel && (failure?.status === 404 || failure?.status === 503)
+            if (!canFallback) throw caught
+            usedVisionModel = visionFallbackModel
+            content = await requestCompletion({ system, prompt, imageDataUrl, maxTokens: 350, temperature: 0.2, model: visionFallbackModel, disableThinking: true })
+          }
           res.statusCode = 200
-          res.end(JSON.stringify({ content, model: visionModel }))
+          res.end(JSON.stringify({ content, model: usedVisionModel }))
         } catch (caught) {
           const message = caught instanceof Error ? caught.message : '硅基流动图片分析失败'
           res.statusCode = 502
