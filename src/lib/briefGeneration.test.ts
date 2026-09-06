@@ -46,5 +46,6 @@ describe('comic evidence boundaries', () => {
   it('reports profile completion for card feedback', () => {
     expect(getComicProfileProgress().percent).toBe(0)
     expect(getComicProfileProgress({ officialSynopsis: '简介', toneTags: ['治愈'] })).toMatchObject({ completed: 2, total: 9, percent: 22, isEmpty: false })
+    expect(normalizeComicProfile({ contentThemes: ['校园成长；奇幻秘密;守护与信任'] }).contentThemes).toEqual(['校园成长', '奇幻秘密', '守护与信任'])
   })
 })

@@ -14,7 +14,14 @@ export const comicProfileFieldKeys = [
 
 export function normalizeComicProfile(value?: Partial<ComicContentProfile> | null): ComicContentProfile {
   const text = (v: unknown) => typeof v === 'string' ? v.trim() : ''
-  const list = (v: unknown) => Array.isArray(v) ? v.filter((item): item is string => typeof item === 'string').map(text).filter(Boolean) : []
+  const list = (v: unknown) => {
+    const items = Array.isArray(v) ? v : typeof v === 'string' ? [v] : []
+    return items
+      .filter((item): item is string => typeof item === 'string')
+      .flatMap((item) => item.split(/[\r\n；;]+/))
+      .map(text)
+      .filter(Boolean)
+  }
   return {
     officialSynopsis: text(value?.officialSynopsis), officialSourceUrl: text(value?.officialSourceUrl),
     setting: text(value?.setting), mainCharacters: list(value?.mainCharacters),
