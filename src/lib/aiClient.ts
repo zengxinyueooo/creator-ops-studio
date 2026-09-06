@@ -16,15 +16,52 @@ function messageFromPayload(payload: unknown) {
   return { error: typeof value.error === 'string' ? value.error : '', code: typeof value.code === 'string' ? value.code : undefined }
 }
 
-export function parseAiJson<T extends object>(content: string): T {
-  const trimmed = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
-  try {
-    const parsed = JSON.parse(trimmed) as unknown
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not an object')
-    return parsed as T
-  } catch {
-    throw new AiGenerationError('模型返回的结构不符合预期，请重试生成')
+function firstBalancedJsonObject(value: string, start: number) {
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let index = start; index < value.length; index += 1) {
+    const char = value[index]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (char === '\\') escaped = true
+      else if (char === '"') inString = false
+      continue
+    }
+    if (char === '"') inString = true
+    else if (char === '{') depth += 1
+    else if (char === '}') {
+      depth -= 1
+      if (depth === 0) return value.slice(start, index + 1)
+    }
   }
+  return ''
+}
+
+export function parseAiJson<T extends object>(content: string): T {
+  const trimmed = content.trim()
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1] ?? ''
+  const candidates = [trimmed, fenced]
+  for (const candidate of candidates) {
+    if (!candidate) continue
+    try {
+      const parsed = JSON.parse(candidate) as unknown
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as T
+    } catch {
+      // Some vision responses preface JSON with a short explanation. Try its first balanced object below.
+    }
+    for (let start = candidate.indexOf('{'); start >= 0; start = candidate.indexOf('{', start + 1)) {
+      const objectText = firstBalancedJsonObject(candidate, start)
+      if (!objectText) continue
+      try {
+        const parsed = JSON.parse(objectText) as unknown
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as T
+      } catch {
+        // Keep scanning: braces may have appeared in explanatory text.
+      }
+    }
+  }
+  throw new AiGenerationError('模型返回的结构不符合预期，请重试生成')
 }
 
 export async function generateAiJson<T extends object>(input: { system: string; prompt: string; maxTokens?: number; temperature?: number }) {
