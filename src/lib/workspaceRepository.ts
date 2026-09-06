@@ -516,7 +516,7 @@ export async function uploadCloudAssets(
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(-100) || 'image'
     const analysis = metadata.analyses?.[fileIndex]
     const visualFormat = analysis?.visualFormat ?? metadata.visualFormat ?? 'uncertain'
-    const reviewStatus = analysis?.reviewStatus ?? (visualFormat === 'single' ? 'available' : 'pending')
+    const reviewStatus = analysis?.reviewStatus ?? (visualFormat === 'invalid' ? 'rejected' : visualFormat === 'uncertain' ? 'pending' : 'available')
     const storagePath = `${userId}/${accountId}/${crypto.randomUUID()}-${safeName}`
     const { error: uploadError } = await db.storage.from('content-assets').upload(storagePath, file, { upsert: false, contentType: file.type })
     if (uploadError) throw uploadError
@@ -552,7 +552,7 @@ export async function uploadCloudAssets(
     }).select('id').single()
     if (assetError) throw assetError
 
-    if (metadata.topicId && visualFormat === 'single' && reviewStatus === 'available') {
+    if (metadata.topicId && visualFormat !== 'invalid' && reviewStatus === 'available') {
       const { error: linkError } = await db.from('topic_assets').insert({ topic_id: metadata.topicId, asset_id: asset.id })
       if (linkError) throw linkError
     }

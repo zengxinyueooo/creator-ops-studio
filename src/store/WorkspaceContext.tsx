@@ -647,7 +647,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           visualFormat: analyses[fileIndex]?.visualFormat ?? metadata.visualFormat ?? 'uncertain',
           classificationConfidence: analyses[fileIndex]?.confidence,
           classificationNote: analyses[fileIndex]?.classificationNote ?? metadata.classificationNote ?? '',
-          reviewStatus: analyses[fileIndex]?.reviewStatus ?? (metadata.visualFormat === 'single' ? 'available' : 'pending'),
+          reviewStatus: analyses[fileIndex]?.reviewStatus ?? (metadata.visualFormat === 'invalid' ? 'rejected' : metadata.visualFormat === 'uncertain' ? 'pending' : 'available'),
           contentType: analyses[fileIndex]?.contentType ?? metadata.contentType ?? 'other',
           characters: analyses[fileIndex]?.characters ?? metadata.characters ?? [],
           usageCount: 0,
