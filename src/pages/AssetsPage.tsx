@@ -49,6 +49,7 @@ export function AssetsPage() {
   const [analyzing, setAnalyzing] = useState(false)
   const [busyAssetId, setBusyAssetId] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [toast, setToast] = useState<{ message: string; tone: 'ok' | 'error' } | null>(null)
   const [previewAsset, setPreviewAsset] = useState<AssetItem | null>(null)
   const [editingAssetId, setEditingAssetId] = useState<string | null>(null)
   const [editFormat, setEditFormat] = useState<AssetVisualFormat>('single')
@@ -56,6 +57,17 @@ export function AssetsPage() {
   const [editTags, setEditTags] = useState('')
   const [editCharacters, setEditCharacters] = useState('')
   const [editNote, setEditNote] = useState('')
+  const toastTimer = useRef<number | null>(null)
+
+  function showToast(message: string, tone: 'ok' | 'error' = 'ok') {
+    if (toastTimer.current) window.clearTimeout(toastTimer.current)
+    setToast({ message, tone })
+    toastTimer.current = window.setTimeout(() => setToast(null), 3200)
+  }
+
+  useEffect(() => () => {
+    if (toastTimer.current) window.clearTimeout(toastTimer.current)
+  }, [])
 
   useEffect(() => {
     if (!previewAsset) return
@@ -117,12 +129,11 @@ export function AssetsPage() {
 
   async function runPendingAnalysis() {
     setAnalyzing(true)
-    setError('')
     try {
       const result = await analyzePendingAssets(1)
-      setError(result.skipped ? '这张历史素材缺少可读取的原图，已跳过。' : '已完成一张历史素材的视觉分析。')
+      showToast(result.skipped ? '这张历史素材缺少可读取的原图，已跳过。' : '已完成一张历史素材的视觉分析。', result.skipped ? 'error' : 'ok')
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '图片分析失败')
+      showToast(caught instanceof Error ? caught.message : '图片分析失败', 'error')
     } finally {
       setAnalyzing(false)
     }
@@ -130,19 +141,19 @@ export function AssetsPage() {
 
   async function toggleSelection(assetId: string) {
     if (!selectedTopicId) {
-      setError('请先选择一份 Brief')
+      showToast('请先选择一份 Brief', 'error')
       return
     }
     if (selectedTopic?.brief?.status !== 'approved') {
-      setError('请先在选题工作流中通过这份 Brief')
+      showToast('请先在选题工作流中通过这份 Brief', 'error')
       return
     }
     setBusyAssetId(assetId)
-    setError('')
     try {
       await toggleTopicAsset(selectedTopicId, assetId)
+      showToast(selectedTopicId ? '已更新这份 Brief 的选图。' : '已更新选图。')
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '选图结果保存失败')
+      showToast(caught instanceof Error ? caught.message : '选图结果保存失败', 'error')
     } finally {
       setBusyAssetId(null)
     }
@@ -159,7 +170,6 @@ export function AssetsPage() {
 
   async function saveAnalysisCorrection(assetId: string) {
     setBusyAssetId(assetId)
-    setError('')
     try {
       await correctAssetAnalysis(assetId, {
         visualFormat: editFormat,
@@ -169,8 +179,9 @@ export function AssetsPage() {
         classificationNote: editNote.trim().slice(0, 64),
       })
       setEditingAssetId(null)
+      showToast('已保存校正结果。')
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '保存素材分析失败')
+      showToast(caught instanceof Error ? caught.message : '保存素材分析失败', 'error')
     } finally {
       setBusyAssetId(null)
     }
@@ -178,11 +189,11 @@ export function AssetsPage() {
 
   async function rerunAnalysis(assetId: string) {
     setBusyAssetId(assetId)
-    setError('')
     try {
       await reanalyzeAsset(assetId)
+      showToast('已重新分析这张素材。')
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '重新分析失败')
+      showToast(caught instanceof Error ? caught.message : '重新分析失败', 'error')
     } finally {
       setBusyAssetId(null)
     }
@@ -248,6 +259,7 @@ export function AssetsPage() {
           <p>{[previewAsset.workName, previewAsset.chapter].filter(Boolean).join(' · ') || previewAsset.originalName} · 原图预览</p>
         </div>
       </div>}
+      {toast && <div className={`toast-pill ${toast.tone}`} role="status">{toast.message}</div>}
     </>
   )
 }

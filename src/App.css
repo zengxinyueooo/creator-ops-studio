@@ -561,3 +561,8 @@
 .imported-toggle small { margin-left: auto; color: #948da2; font-size: 11px; font-weight: 600; }
 .research-task.is-imported { opacity: .62; }
 .research-task.is-imported:hover { opacity: 1; }
+
+/* ---------- 轻提示 toast ---------- */
+.toast-pill { position: fixed; top: 18px; left: 50%; z-index: 95; transform: translateX(-50%); display: inline-flex; align-items: center; max-width: min(540px, 88vw); padding: 11px 22px; border: 1px solid rgba(255,255,255,.95); border-radius: 999px; color: #4f7a63; background: rgba(240,253,246,.97); box-shadow: 0 18px 44px rgba(40,20,80,.16); font-size: 12.5px; font-weight: 700; backdrop-filter: blur(8px); animation: toast-drop .3s cubic-bezier(.22,1,.36,1); }
+.toast-pill.error { color: #c04758; background: rgba(255,241,244,.97); border-color: #ffd3dc; }
+@keyframes toast-drop { from { opacity: 0; transform: translate(-50%, -16px); } to { opacity: 1; transform: translate(-50%, 0); } }
