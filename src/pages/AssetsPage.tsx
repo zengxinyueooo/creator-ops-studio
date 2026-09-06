@@ -71,12 +71,11 @@ export function AssetsPage() {
   const selectedComic = comics.find((comic) => comic.id === selectedTopic?.comicId)
   const allAssets = (state.assets ?? []).filter((asset) => asset.accountId === activeAccount.id)
   const assets = allAssets.filter((asset) => {
-    const matchesComic = !selectedTopic?.comicId || asset.comicId === selectedTopic.comicId
     const matchesQuery = [asset.originalName, asset.workName, asset.chapter, ...asset.tags, ...asset.characters].join(' ').toLowerCase().includes(query.trim().toLowerCase())
-    return matchesComic && matchesQuery && (!singleOnly || asset.visualFormat === 'single')
+    return matchesQuery && (!singleOnly || asset.visualFormat === 'single')
   })
   const selectedCount = allAssets.filter((asset) => selectedTopicId && asset.topicIds.includes(selectedTopicId)).length
-  const eligibleCount = allAssets.filter((asset) => (!selectedTopic?.comicId || asset.comicId === selectedTopic.comicId) && asset.visualFormat !== 'invalid' && asset.reviewStatus === 'available').length
+  const eligibleCount = allAssets.filter((asset) => asset.visualFormat !== 'invalid' && asset.reviewStatus === 'available').length
   const pendingAnalysisCount = allAssets.filter((asset) => asset.reviewStatus === 'pending' || asset.visualFormat === 'uncertain').length
 
   function selectBrief(topicId: string) {
@@ -196,7 +195,7 @@ export function AssetsPage() {
         <div><label>当前内容 Brief</label><PillSelect value={selectedTopicId} ariaLabel="当前内容 Brief" placeholder="选择 Brief" options={[{ value: '', label: '选择 Brief' }, ...briefTopics.map((topic) => ({ value: topic.id, label: topic.title }))]} onChange={selectBrief} /></div>
         <div className="asset-brief-stat"><strong>{selectedCount}</strong><span>已选素材</span></div>
         <div className="asset-brief-stat"><strong>{eligibleCount}</strong><span>可用素材</span></div>
-        <div className="brief-guidance-row">{selectedComic && <span className="guidance-chip comic">《{selectedComic.title}》</span>}{(selectedTopic?.brief ? selectedTopic.brief.assetGuidance : ['先在选题工作流中生成并通过 Brief']).map((item) => <span key={item} className="guidance-chip">{item}</span>)}</div>
+        <div className="brief-guidance-row">{selectedComic && <span className="guidance-chip comic">《{selectedComic.title}》</span>}{(selectedTopic?.brief ? selectedTopic.brief.assetGuidance : ['先在选题工作流中生成并通过 Brief']).map((item) => <span key={item} className="guidance-chip">{item}</span>)}{selectedTopic && <span className="brief-scope-note">仅用于加入该 Brief，不筛选或改写素材</span>}</div>
         <span className={`status-badge ${selectedTopic?.brief?.status === 'approved' ? 'green' : 'amber'}`}>{selectedTopic?.brief?.status === 'approved' ? 'Brief 已通过' : '请选择已通过的 Brief'}</span>
       </section>
 
