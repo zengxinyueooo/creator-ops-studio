@@ -1,6 +1,7 @@
 import { ComicProfileEditor } from '../components/ComicProfileEditor'
 import { ArrowUpRight, BookOpen, Check, CircleX, Library, Plus, Search } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
+import { getComicProfileProgress, normalizeComicProfile } from '../lib/comicProfile'
 import { useWorkspace } from '../store/WorkspaceContext'
 import type { Comic } from '../types'
 
@@ -29,6 +30,9 @@ function ComicCard({ comic, mode, tone, onEdit, onKeep, onDrop }: {
 }) {
   const platform = platformLabels[comic.platform] ?? comic.platform
   const serialization = serializationLabels[comic.serializationStatus]
+  const profile = normalizeComicProfile(comic.contentProfile)
+  const profileProgress = getComicProfileProgress(profile)
+  const profileTags = [...profile.contentThemes, ...profile.toneTags].slice(0, 3)
   return (
     <article className="comic-card">
       <div className={`comic-cover-placeholder ${tone}`}>{comic.coverUrl ? <img src={comic.coverUrl} alt={`${comic.title}封面`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <><BookOpen size={25} /><span>{comic.title.slice(0, 1)}</span></>}</div>
@@ -40,10 +44,17 @@ function ComicCard({ comic, mode, tone, onEdit, onKeep, onDrop }: {
         <h3>{comic.title}</h3>
         <p className="comic-platform">{platform} · {serialization}{comic.updateNote ? ` · ${comic.updateNote}` : ''}</p>
         <p className="comic-reason">{comic.selectionNote || '暂无调研说明'}</p>
-        <p className="comic-reason">官方简介：{comic.contentProfile?.officialSynopsis || '未知 / 待补充档案'}</p>
-        <button className="secondary-button" type="button" onClick={onEdit}>编辑漫画档案</button>
+        <div className={`comic-profile-summary ${profileProgress.isEmpty ? 'empty' : ''}`}>
+          <div><strong>{profileProgress.isEmpty ? '漫画档案待补充' : `漫画档案 ${profileProgress.completed}/${profileProgress.total}`}</strong>{!profileProgress.isEmpty && <span>{profileProgress.percent}%</span>}</div>
+          <p>{profile.officialSynopsis || '补充官方简介、人物关系和内容边界后，可用于生成有依据的 Brief。'}</p>
+          {profileTags.length > 0 && <div className="comic-profile-tags">{profileTags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
+        </div>
+        <button className="comic-profile-button" type="button" onClick={onEdit}><BookOpen size={15} />{profileProgress.isEmpty ? '补充漫画档案' : '查看 / 编辑漫画档案'}</button>
         <div className="comic-card-footer">
-          {comic.sourceUrl ? <a href={comic.sourceUrl} target="_blank" rel="noreferrer">查看来源 <ArrowUpRight size={14} /></a> : <span>未填写来源</span>}
+          <div className="comic-source-links">
+            {profile.officialSourceUrl && <a href={profile.officialSourceUrl} target="_blank" rel="noreferrer">快看官方页 <ArrowUpRight size={14} /></a>}
+            {comic.sourceUrl ? <a href={comic.sourceUrl} target="_blank" rel="noreferrer">调研来源 <ArrowUpRight size={14} /></a> : !profile.officialSourceUrl && <span>未填写来源</span>}
+          </div>
           {mode === 'candidate' && <div>
             <button className="ghost-danger-button" type="button" onClick={onDrop}><CircleX size={15} />暂不收录</button>
             <button className="primary-button" type="button" onClick={onKeep}><Check size={15} />保留</button>

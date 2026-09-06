@@ -1,5 +1,17 @@
 import type { ComicContentProfile } from '../types'
 
+export const comicProfileFieldKeys = [
+  'officialSynopsis',
+  'officialSourceUrl',
+  'setting',
+  'mainCharacters',
+  'relationshipSummary',
+  'coreConflicts',
+  'contentThemes',
+  'toneTags',
+  'spoilerBoundary',
+] as const satisfies ReadonlyArray<Exclude<keyof ComicContentProfile, 'updatedAt'>>
+
 export function normalizeComicProfile(value?: Partial<ComicContentProfile> | null): ComicContentProfile {
   const text = (v: unknown) => typeof v === 'string' ? v.trim() : ''
   const list = (v: unknown) => Array.isArray(v) ? v.filter((item): item is string => typeof item === 'string').map(text).filter(Boolean) : []
@@ -9,6 +21,21 @@ export function normalizeComicProfile(value?: Partial<ComicContentProfile> | nul
     relationshipSummary: text(value?.relationshipSummary), coreConflicts: list(value?.coreConflicts),
     contentThemes: list(value?.contentThemes), toneTags: list(value?.toneTags),
     spoilerBoundary: text(value?.spoilerBoundary), updatedAt: text(value?.updatedAt),
+  }
+}
+
+export function getComicProfileProgress(value?: Partial<ComicContentProfile> | null) {
+  const profile = normalizeComicProfile(value)
+  const completed = comicProfileFieldKeys.filter((key) => {
+    const field = profile[key]
+    return Array.isArray(field) ? field.length > 0 : Boolean(field)
+  }).length
+  return {
+    completed,
+    total: comicProfileFieldKeys.length,
+    percent: Math.round((completed / comicProfileFieldKeys.length) * 100),
+    isEmpty: completed === 0,
+    isComplete: completed === comicProfileFieldKeys.length,
   }
 }
 

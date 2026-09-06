@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { demoState } from '../data/demo'
 import { AiGenerationError, generateAiJson } from './aiClient'
 import { createTemplateBrief, generateContentBrief, selectBriefReferences } from './briefGeneration'
-import { normalizeComicProfile, validateComicProfile, validateComicCover } from './comicProfile'
+import { getComicProfileProgress, normalizeComicProfile, validateComicProfile, validateComicCover } from './comicProfile'
 
 import * as aiClient from './aiClient'
 vi.spyOn(aiClient, 'generateAiJson')
@@ -42,5 +42,9 @@ describe('comic evidence boundaries', () => {
     expect(() => validateComicProfile(normalizeComicProfile({ officialSourceUrl: 'https://kuaikanmanhua.com.evil.test/' }))).toThrow()
     expect(() => validateComicCover({ type: 'image/svg+xml', size: 1 } as File)).toThrow()
     expect(() => validateComicCover({ type: 'image/png', size: 6 * 1024 * 1024 } as File)).toThrow()
+  })
+  it('reports profile completion for card feedback', () => {
+    expect(getComicProfileProgress().percent).toBe(0)
+    expect(getComicProfileProgress({ officialSynopsis: '简介', toneTags: ['治愈'] })).toMatchObject({ completed: 2, total: 9, percent: 22, isEmpty: false })
   })
 })
