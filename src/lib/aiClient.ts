@@ -43,3 +43,33 @@ export async function generateAiJson<T extends object>(input: { system: string; 
   }
   return { data: parseAiJson<T>((payload as { content: string }).content), model: (payload as { model: string }).model }
 }
+
+function asDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new AiGenerationError(`无法读取图片“${file.name}”`))
+    reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new AiGenerationError(`无法读取图片“${file.name}”`))
+    reader.readAsDataURL(file)
+  })
+}
+
+export async function generateAiVisionJson<T extends object>(input: { file: File; system: string; prompt: string }) {
+  const { file, ...request } = input
+  if (!file.type.startsWith('image/')) throw new AiGenerationError('只能分析图片文件')
+  if (file.size > 15 * 1024 * 1024) throw new AiGenerationError('图片超过 15MB，无法分析')
+  const imageDataUrl = await asDataUrl(file)
+  const response = await fetch('/api/ai/vision', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Creator-Ops-Bridge': '1' },
+    body: JSON.stringify({ ...request, imageDataUrl }),
+  })
+  const payload = await response.json().catch(() => null) as unknown
+  if (!response.ok) {
+    const message = messageFromPayload(payload)
+    throw new AiGenerationError(message.error || '图片分析失败', message.code)
+  }
+  if (!payload || typeof payload !== 'object' || typeof (payload as { content?: unknown }).content !== 'string' || typeof (payload as { model?: unknown }).model !== 'string') {
+    throw new AiGenerationError('图片分析返回格式异常')
+  }
+  return { data: parseAiJson<T>((payload as { content: string }).content), model: (payload as { model: string }).model }
+}

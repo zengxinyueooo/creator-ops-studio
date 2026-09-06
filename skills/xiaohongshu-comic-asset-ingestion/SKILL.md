@@ -1,6 +1,6 @@
 ---
 name: xiaohongshu-comic-asset-ingestion
-description: Store all valid images from one user-selected, already captured Xiaohongshu note in this repository's Supabase-backed manga asset library with source traceability. Use only after the user has kept a note and explicitly started capture. Do not use for broad topic research, automatic image judgment, topic creation, Brief generation, or publishing.
+description: Analyze and store all valid images from one user-selected, already captured Xiaohongshu note in this repository's Supabase-backed manga asset library with source traceability. Use only after the user has kept a note and explicitly started capture. Do not use for broad topic research, topic creation, Brief generation, or publishing.
 ---
 
 # Xiaohongshu Comic Asset Ingestion
@@ -29,29 +29,22 @@ Use the OpenCLI Xiaohongshu adapter, not hand-written requests to Xiaohongshu. L
 - Keep the note ID, title, author, original source URL, topic hashtags, and downloaded image order. A signed URL may expire, so the note ID is the durable deduplication key.
 - Keep activity read-only: do not like, save, follow, comment, publish, or repeatedly reload the note.
 
-## Store first; review separately
+## Analyze, then store
 
-Inspect only enough to reject corrupt or non-image files. Store valid image bytes without resizing or recompressing them.
+Inspect only enough to reject corrupt or non-image files. Send every valid image once to the configured visual model before writing the asset record; then store its original bytes without resizing or recompressing them.
 
-Do not claim that an unconfigured background vision workflow has classified an image. Unless a separately configured visual model has actually returned a result, create each asset with:
-
-- `visual_format: uncertain`
-- `review_status: pending`
-- `content_type: other`
-- `classification_note`: `已从参考笔记采集，待人工确认图型与内容标签（第 N 张）`
-- no semantic tags and no inferred character names
-
-The user reviews format and tags in the material-review page. An explicit human click may then mark a single image `available` or a collage `rejected` while retaining both in the asset library.
-
-If a configured visual-classification call is explicitly requested and succeeds, it may prefill the following smallest useful metadata set, but its result remains reviewable:
+The default visual model is an explicit part of capture, not a separate manual-review queue. It must return structured metadata for each image. A continuous vertical comic image remains `single` even if it contains several comic panels; use `collage` only when the uploaded image visibly combines two or more independent images with a joining boundary.
 
 - `visual_format`: `single`, `collage`, `uncertain`, or `invalid`.
-- `review_status`: `available` for a confirmed `single`; `rejected` for `collage` or `invalid`; `pending` for `uncertain`.
-- `classification_note`: short visual reason, including the image position in the note.
-- `content_type`: choose only when evident (`cover`, `character`, `interaction`, `plot`, `dialogue`, `atmosphere`); otherwise use `other`.
-- `characters`: add names only when they are known from the comic or clearly identifiable; never guess.
+- `review_status`: `available` for `single`; `rejected` for `collage` or `invalid`; `pending` only when the model explicitly returns `uncertain`.
+- `classification_note`: one concise visual description.
+- `content_type`: `cover`, `character`, `interaction`, `plot`, `dialogue`, `atmosphere`, or `other`.
+- two to five deduplicated semantic tags and a bounded confidence value.
+- `characters`: only names visibly written in the image or supplied as unambiguous comic context; otherwise leave empty. Never create a “角色待确认” asset tag.
 
-For the current workflow, a `rejected` collage is still retained in the library. It simply cannot be added to a Brief because the first version only uses one continuous image per asset.
+If visual analysis is not configured or fails, stop before asset creation and report the configuration/error. Do not silently create an unlabeled `pending` asset. Existing legacy pending assets can be reanalyzed in one explicit maintenance action.
+
+The model’s result is the initial workflow status. The user may later correct an exceptional result, but the standard card should show the actual analysis labels rather than a mandatory “确认单图” action. A rejected collage is retained for provenance but cannot be added to a Brief.
 
 ## Write to the asset library
 
@@ -64,7 +57,7 @@ Every stored asset must include:
 - `copyrightStatus: reference_only` in `custom_fields` unless the user supplies stronger rights information.
 - Work name, a note-title-derived chapter/segment label, source-note image order, and any confirmed semantic content tags.
 
-When classification has actually occurred, use at most three semantic tags per image, with at most one from each group when possible:
+Use two to five semantic tags per image, with at most one from each group when possible:
 
 - Emotion: `甜`, `暧昧`, `心动`, `治愈`, `轻松`, `紧张`, `虐心`, `悬念`, `反差萌`.
 - Relationship or story beat: `对视`, `承诺`, `守护`, `吃醋`, `信任危机`, `关系推进`, `设定揭秘`.
@@ -81,7 +74,7 @@ After upload:
 1. Confirm the number of stored assets equals the valid downloaded-image count, accounting for deduplicated items.
 2. Reload the asset page and ensure each asset has a working signed preview.
 3. Confirm each preview opens the full original image.
-4. Report the total, pending-review count, retained collage count (if manually or model-confirmed), and any skipped files.
+4. Report the total, model-available single-image count, retained collage count, uncertain count, and any skipped files.
 
 ## Boundaries
 
