@@ -35,7 +35,7 @@ function ComicCard({ comic, mode, tone, onEdit, onKeep, onDrop }: {
   const profileTags = [...profile.contentThemes, ...profile.toneTags].slice(0, 3)
   return (
     <article className="comic-card">
-      <div className={`comic-cover-placeholder ${tone}${comic.coverUrl ? ' has-cover' : ''}`}>{comic.coverUrl ? <><img className="comic-cover-backdrop" src={comic.coverUrl} alt="" aria-hidden="true" /><img className="comic-cover-image" src={comic.coverUrl} alt={`${comic.title}封面`} /></> : <><BookOpen size={25} /><span>{comic.title.slice(0, 1)}</span></>}</div>
+      <div className={`comic-cover-placeholder ${tone}${comic.coverUrl ? ' has-cover' : ''}`}>{comic.coverUrl ? <img className="comic-cover-image" src={comic.coverUrl} alt={`${comic.title}封面`} /> : <><BookOpen size={25} /><span>{comic.title.slice(0, 1)}</span></>}</div>
       <div className="comic-card-body">
         <div className="comic-card-top">
           <span className={`status-badge ${mode === 'selected' ? 'green' : 'amber'}`}>{mode === 'selected' ? '已保留' : '待审核'}</span>
@@ -45,7 +45,7 @@ function ComicCard({ comic, mode, tone, onEdit, onKeep, onDrop }: {
         <p className="comic-platform">{platform} · {serialization}{comic.updateNote ? ` · ${comic.updateNote}` : ''}</p>
         <p className="comic-reason">{comic.selectionNote || '暂无调研说明'}</p>
         <div className={`comic-profile-summary ${profileProgress.isEmpty ? 'empty' : ''}`}>
-          <div><strong>{profileProgress.isEmpty ? '漫画档案待补充' : `漫画档案 ${profileProgress.completed}/${profileProgress.total}`}</strong>{!profileProgress.isEmpty && <span>{profileProgress.percent}%</span>}</div>
+          {profileProgress.isEmpty && <div><strong>漫画档案待补充</strong></div>}
           <p>{profile.officialSynopsis || '补充官方简介、人物关系和内容边界后，可用于生成有依据的 Brief。'}</p>
           {profileTags.length > 0 && <div className="comic-profile-tags">{profileTags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
         </div>
