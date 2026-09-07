@@ -1,0 +1,4 @@
+interface:
+  display_name: "快看漫画档案补全"
+  short_description: "从快看官方作品页核验并补全已保留漫画的详细内容档案"
+  default_prompt: "使用 $kuaikan-comic-profile-enrichment 核验并补全这部已保留漫画的官方档案。"

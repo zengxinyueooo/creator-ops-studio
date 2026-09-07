@@ -18,6 +18,7 @@ type DownloadedImage = { filename: string; path: string; mimeType: string; byteS
 type CaptureFile = DownloadedImage & { expiresAt: number }
 type LocalAiInput = { system?: unknown; prompt?: unknown; maxTokens?: unknown; temperature?: unknown }
 type LocalVisionInput = LocalAiInput & { imageDataUrl?: unknown; formatRetry?: unknown }
+type KuaikanCoverCapture = { bytes: Buffer; filename: string; mimeType: string; expiresAt: number }
 
 function parseMetric(value: unknown) {
   const text = String(value ?? '0').trim().replace(/,/g, '')
@@ -64,6 +65,164 @@ function sanitizeXhsUrl(value: unknown) {
   } catch {
     return ''
   }
+}
+
+function sanitizeKuaikanTopicUrl(value: unknown) {
+  try {
+    const url = new URL(String(value))
+    if (url.protocol !== 'https:' || url.hostname !== 'www.kuaikanmanhua.com' || !/^\/web\/topic\/\d+\/?$/.test(url.pathname)) return ''
+    return `https://www.kuaikanmanhua.com${url.pathname.replace(/\/$/, '')}`
+  } catch {
+    return ''
+  }
+}
+
+function decodeHtml(value: string) {
+  const named: Record<string, string> = { amp: '&', quot: '"', apos: "'", lt: '<', gt: '>', nbsp: ' ' }
+  return value
+    .replace(/&#x([0-9a-f]+);/gi, (match, digits: string) => {
+      const codePoint = Number.parseInt(digits, 16)
+      return Number.isFinite(codePoint) && codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : match
+    })
+    .replace(/&#(\d+);/g, (match, digits: string) => {
+      const codePoint = Number.parseInt(digits, 10)
+      return Number.isFinite(codePoint) && codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : match
+    })
+    .replace(/&([a-z]+);/gi, (match, name: string) => named[name.toLowerCase()] ?? match)
+}
+
+function htmlAttribute(tag: string, name: string) {
+  const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*(["'])([\\s\\S]*?)\\1`, 'i'))
+  return match ? decodeHtml(match[2]).trim() : ''
+}
+
+function htmlText(value: string) {
+  return decodeHtml(value.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim()
+}
+
+function normalizeComicTitle(value: string) {
+  return value.normalize('NFKC').toLowerCase().replace(/漫画$/u, '').replace(/[\s·•・:：,，。.!！?？—_\-《》【】()[\]（）]/g, '')
+}
+
+function editDistance(left: string, right: string) {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index)
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    const current = [leftIndex]
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      current[rightIndex] = Math.min(
+        current[rightIndex - 1] + 1,
+        previous[rightIndex] + 1,
+        previous[rightIndex - 1] + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1),
+      )
+    }
+    previous.splice(0, previous.length, ...current)
+  }
+  return previous[right.length]
+}
+
+async function fetchKuaikanHtml(url: string, context: string) {
+  const response = await fetch(url, {
+    headers: {
+      Accept: 'text/html,application/xhtml+xml',
+      'Accept-Language': 'zh-CN,zh;q=0.9',
+      'User-Agent': 'Mozilla/5.0 CreatorOpsStudio/1.0',
+    },
+    redirect: 'follow',
+    signal: AbortSignal.timeout(30_000),
+  })
+  if (!response.ok) throw new Error(`${context}失败（${response.status}）`)
+  const contentLength = Number.parseInt(response.headers.get('content-length') ?? '0', 10)
+  if (contentLength > 4 * 1024 * 1024) throw new Error(`${context}返回内容过大`)
+  const html = await response.text()
+  if (!html || html.length > 4 * 1024 * 1024) throw new Error(`${context}返回内容异常`)
+  return html
+}
+
+async function resolveKuaikanTopicUrl(title: string, sourceUrl: unknown) {
+  const supplied = sanitizeKuaikanTopicUrl(sourceUrl)
+  if (supplied) return supplied
+
+  const searchHtml = await fetchKuaikanHtml(`https://www.kuaikanmanhua.com/sou/${encodeURIComponent(title)}`, '搜索快看漫画')
+  const candidates = [...searchHtml.matchAll(/<a\b[^>]*>/gi)].flatMap((match) => {
+    const href = htmlAttribute(match[0], 'href')
+    const candidateTitle = htmlAttribute(match[0], 'title')
+    const topicUrl = sanitizeKuaikanTopicUrl(href.startsWith('/') ? `https://www.kuaikanmanhua.com${href}` : href)
+    return topicUrl && candidateTitle ? [{ title: candidateTitle, url: topicUrl }] : []
+  })
+  const unique = [...new Map(candidates.map((candidate) => [candidate.url, candidate])).values()]
+  if (!unique.length) throw new Error(`快看官网没有找到“${title}”的作品页，请先填写官方链接`)
+
+  const normalizedTarget = normalizeComicTitle(title)
+  const ranked = unique.map((candidate) => ({
+    ...candidate,
+    distance: editDistance(normalizedTarget, normalizeComicTitle(candidate.title)),
+  })).sort((left, right) => left.distance - right.distance)
+  const closest = ranked[0]
+  const allowedDistance = normalizedTarget.length <= 8 ? 1 : Math.max(1, Math.floor(normalizedTarget.length * 0.2))
+  if (!closest || closest.distance > allowedDistance) throw new Error(`快看官网没有找到与“${title}”匹配的作品页，请先填写官方链接`)
+  return closest.url
+}
+
+function metaContent(html: string, key: string) {
+  for (const match of html.matchAll(/<meta\b[^>]*>/gi)) {
+    const tag = match[0]
+    if ([htmlAttribute(tag, 'name'), htmlAttribute(tag, 'property')].some((value) => value.toLowerCase() === key.toLowerCase())) return htmlAttribute(tag, 'content')
+  }
+  return ''
+}
+
+function parseKuaikanTopic(html: string, officialSourceUrl: string) {
+  const headingMatch = html.match(/<h3\b[^>]*class=["'][^"']*\btitle\b[^"']*["'][^>]*>([\s\S]*?)<\/h3>/i)
+  const metaTitle = metaContent(html, 'og:title').replace(/漫画[｜|].*$/u, '').trim()
+  const canonicalTitle = htmlText(headingMatch?.[1] ?? '') || metaTitle
+  if (!canonicalTitle) throw new Error('快看作品页缺少可识别的官方标题')
+
+  const rawDescription = metaContent(html, 'description')
+  const prefix = `${canonicalTitle}简介：`
+  const synopsis = (rawDescription.startsWith(prefix) ? rawDescription.slice(prefix.length) : rawDescription)
+    .replace(/[【[][^】\]]*(?:责编|更新|独家|授权|完结)[^】\]]*[】\]]\s*$/u, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!synopsis) throw new Error('快看作品页缺少可用的官方简介')
+
+  const imageTags = [...html.matchAll(/<img\b[^>]*>/gi)].map((match) => match[0])
+  const coverUrl = imageTags.map((tag) => ({
+    src: htmlAttribute(tag, 'src'),
+    alt: htmlAttribute(tag, 'alt'),
+    className: htmlAttribute(tag, 'class'),
+  })).find((image) => image.className.split(/\s+/).includes('img') && normalizeComicTitle(image.alt) === normalizeComicTitle(canonicalTitle))?.src ?? ''
+  if (!coverUrl) throw new Error('快看作品页缺少可下载的官方横版封面')
+
+  const headerEnd = html.indexOf('conversionData')
+  const headerHtml = headerEnd > 0 ? html.slice(0, headerEnd) : html.slice(0, 30_000)
+  const tags = [...headerHtml.matchAll(/<span\b[^>]*class=["'][^"']*\btab\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi)]
+    .map((match) => htmlText(match[1]))
+    .filter(Boolean)
+    .slice(0, 12)
+  const author = htmlText(headerHtml.match(/<div\b[^>]*class=["'][^"']*\bnickname\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i)?.[1] ?? '')
+  return { canonicalTitle, officialSynopsis: synopsis, officialSourceUrl, coverUrl, tags: [...new Set(tags)], author }
+}
+
+async function downloadKuaikanCover(coverUrl: string, canonicalTitle: string): Promise<KuaikanCoverCapture> {
+  const url = new URL(coverUrl)
+  const allowedHost = url.hostname === 'kuaikanmanhua.com' || url.hostname.endsWith('.kuaikanmanhua.com') || url.hostname === 'v3mh.com' || url.hostname.endsWith('.v3mh.com')
+  if (url.protocol !== 'https:' || !allowedHost) throw new Error('快看作品页返回了不受信任的封面地址')
+  const response = await fetch(url, {
+    headers: { Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*', Referer: 'https://www.kuaikanmanhua.com/' },
+    signal: AbortSignal.timeout(30_000),
+  })
+  if (!response.ok) throw new Error(`下载快看官方封面失败（${response.status}）`)
+  const declaredSize = Number.parseInt(response.headers.get('content-length') ?? '0', 10)
+  if (declaredSize > 5 * 1024 * 1024) throw new Error('快看官方封面超过 5MB，已停止下载')
+  const bytes = Buffer.from(await response.arrayBuffer())
+  if (bytes.byteLength > 5 * 1024 * 1024) throw new Error('快看官方封面超过 5MB，已停止下载')
+  const mimeType = detectImageMime(bytes.subarray(0, 16))
+  if (!mimeType) throw new Error('快看官方封面不是可识别的图片')
+  const safeTitle = [...canonicalTitle]
+    .filter((character) => character.charCodeAt(0) >= 32 && !'<>:"/\\|?*'.includes(character))
+    .join('')
+    .trim() || 'kuaikan-cover'
+  return { bytes, filename: `${safeTitle}${extensionForMime(mimeType)}`, mimeType, expiresAt: Date.now() + 30 * 60 * 1000 }
 }
 
 function noteIdToDate(url: string) {
@@ -248,9 +407,87 @@ function isLocalBridgeRequest(req: IncomingMessage) {
 
 function localOpenCliPlugin() {
   const captures = new Map<string, Map<string, CaptureFile>>()
+  const kuaikanCovers = new Map<string, KuaikanCoverCapture>()
   return {
-    name: 'local-opencli-xhs-bridge',
+    name: 'local-creator-ops-web-bridge',
     configureServer(server: { middlewares: { use: (path: string, handler: (req: IncomingMessage, res: ServerResponse) => void) => void } }) {
+      server.middlewares.use('/api/opencli/kuaikan-profile', async (req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        if (req.method !== 'POST') {
+          res.statusCode = 405
+          res.end(JSON.stringify({ error: '只允许 POST 请求' }))
+          return
+        }
+        if (!isLocalBridgeRequest(req)) {
+          res.statusCode = 403
+          res.end(JSON.stringify({ error: '仅允许 Creator Ops 本地页面调用' }))
+          return
+        }
+        try {
+          const input = await readJsonBody(req) as { title?: unknown; sourceUrl?: unknown }
+          const title = String(input.title ?? '').trim()
+          if (!title || title.length > 100) throw new Error('缺少有效的漫画名称')
+          const officialSourceUrl = await resolveKuaikanTopicUrl(title, input.sourceUrl)
+          const html = await fetchKuaikanHtml(officialSourceUrl, '读取快看作品页')
+          const official = parseKuaikanTopic(html, officialSourceUrl)
+          const normalizedInput = normalizeComicTitle(title)
+          const normalizedOfficial = normalizeComicTitle(official.canonicalTitle)
+          const distance = editDistance(normalizedInput, normalizedOfficial)
+          const allowedDistance = normalizedInput.length <= 8 ? 1 : Math.max(1, Math.floor(normalizedInput.length * 0.2))
+          if (distance > allowedDistance) throw new Error(`官方页标题“${official.canonicalTitle}”与库内漫画“${title}”不匹配，请先核对链接`)
+
+          const cover = await downloadKuaikanCover(official.coverUrl, official.canonicalTitle)
+          const coverToken = randomUUID()
+          kuaikanCovers.set(coverToken, cover)
+          for (const [token, stored] of kuaikanCovers) {
+            if (stored.expiresAt <= Date.now()) kuaikanCovers.delete(token)
+          }
+          const titleWarning = normalizedInput === normalizedOfficial
+            ? ''
+            : `快看官方标题为“${official.canonicalTitle}”；已保留库内名称“${title}”，未自动改名。`
+          res.statusCode = 200
+          res.end(JSON.stringify({
+            canonicalTitle: official.canonicalTitle,
+            officialSynopsis: official.officialSynopsis,
+            officialSourceUrl: official.officialSourceUrl,
+            author: official.author,
+            tags: official.tags,
+            titleWarning,
+            cover: {
+              filename: cover.filename,
+              mimeType: cover.mimeType,
+              byteSize: cover.bytes.byteLength,
+              downloadUrl: `/api/opencli/kuaikan-cover/${coverToken}`,
+            },
+          }))
+        } catch (caught) {
+          const message = caught instanceof Error ? caught.message : '快看漫画档案抓取失败'
+          res.statusCode = 502
+          res.end(JSON.stringify({ error: message }))
+        }
+      })
+
+      server.middlewares.use('/api/opencli/kuaikan-cover', async (req, res) => {
+        if (req.method !== 'GET' || !isLocalBridgeRequest(req)) {
+          res.statusCode = req.method === 'GET' ? 403 : 405
+          res.end()
+          return
+        }
+        const token = (req.url ?? '').split('?')[0].split('/').filter(Boolean)[0]
+        const cover = token ? kuaikanCovers.get(token) : undefined
+        if (!cover || cover.expiresAt <= Date.now()) {
+          res.statusCode = 404
+          res.end()
+          return
+        }
+        res.setHeader('Content-Type', cover.mimeType)
+        res.setHeader('Content-Length', cover.bytes.byteLength)
+        res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(cover.filename)}`)
+        res.setHeader('Cache-Control', 'no-store')
+        res.statusCode = 200
+        res.end(cover.bytes)
+      })
+
       server.middlewares.use('/api/opencli/xhs-search', async (req, res) => {
         res.setHeader('Content-Type', 'application/json; charset=utf-8')
         if (req.method !== 'POST') {

@@ -19,6 +19,21 @@ export interface XhsNoteCapture {
   }>
 }
 
+export interface KuaikanOfficialProfile {
+  canonicalTitle: string
+  officialSynopsis: string
+  officialSourceUrl: string
+  author: string
+  tags: string[]
+  titleWarning: string
+  cover: {
+    filename: string
+    mimeType: string
+    byteSize: number
+    downloadUrl: string
+  }
+}
+
 export async function searchXiaohongshuBatch(
   keywords: string[],
   requiredComicTitle: string,
@@ -51,4 +66,22 @@ export async function downloadCapturedImage(image: XhsNoteCapture['images'][numb
   if (!response.ok) throw new Error(`读取图片“${image.filename}”失败`)
   const blob = await response.blob()
   return new File([blob], image.filename, { type: image.mimeType || blob.type })
+}
+
+export async function fetchKuaikanOfficialProfile(title: string, sourceUrl?: string): Promise<KuaikanOfficialProfile> {
+  const response = await fetch('/api/opencli/kuaikan-profile', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Creator-Ops-Bridge': '1' },
+    body: JSON.stringify({ title, sourceUrl }),
+  })
+  const payload = await response.json().catch(() => null) as (KuaikanOfficialProfile & { error?: string }) | null
+  if (!response.ok || !payload) throw new Error(payload?.error || '本机快看漫画档案服务不可用')
+  return payload
+}
+
+export async function downloadKuaikanOfficialCover(cover: KuaikanOfficialProfile['cover']) {
+  const response = await fetch(cover.downloadUrl, { headers: { 'X-Creator-Ops-Bridge': '1' } })
+  if (!response.ok) throw new Error(`读取快看官方封面“${cover.filename}”失败`)
+  const blob = await response.blob()
+  return new File([blob], cover.filename, { type: cover.mimeType || blob.type })
 }
