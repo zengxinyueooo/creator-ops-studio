@@ -20,6 +20,13 @@ function defaultKeywordSuggestions(title: string, serializationStatus: 'ongoing'
   return angles.map((angle) => `${title} ${angle}`)
 }
 
+function resultAlreadySaved(result: XhsResearchResult, references: ReferenceItem[]) {
+  return references.some((reference) => (
+    Boolean(result.noteId && reference.noteId && result.noteId === reference.noteId)
+    || reference.sourceUrl === result.url
+  ))
+}
+
 export function ResearchPage() {
   const { activeAccount, state, addResearchTask, saveResearchResults, importResearchResults, updateReferenceReview, captureReferenceAssets, createTopicFromReferences } = useWorkspace()
   const comics = state.comics.filter((comic) => comic.accountId === activeAccount.id && comic.status !== 'archived')
@@ -52,8 +59,9 @@ export function ResearchPage() {
   const [error, setError] = useState('')
   const selectedKeywords = keywordSelection ?? suggestedKeywords
   const tasks = state.researchTasks.filter((task) => task.accountId === activeAccount.id && task.comicId && validComicIds.has(task.comicId))
-  const pendingTasks = tasks.filter((task) => task.status !== 'imported')
-  const importedTasks = tasks.filter((task) => task.status === 'imported')
+  const taskHasUnsavedResults = (task: (typeof tasks)[number]) => (task.results ?? []).some((result) => !resultAlreadySaved(result, references))
+  const pendingTasks = tasks.filter((task) => task.status !== 'imported' || taskHasUnsavedResults(task))
+  const importedTasks = tasks.filter((task) => task.status === 'imported' && !taskHasUnsavedResults(task))
   const selectedReferences = references.filter((reference) => selectedReferenceIds.includes(reference.id))
   const selectionComicId = selectedReferences[0]?.comicId
   const visibleReferences = references.filter((reference) => {
@@ -138,13 +146,19 @@ export function ResearchPage() {
   async function confirmImport(taskId: string) {
     const results = previews[taskId] ?? tasks.find((task) => task.id === taskId)?.results ?? []
     const selectedUrls = new Set(selected[taskId] ?? [])
-    const approved = results.filter((result) => selectedUrls.has(result.url))
+    const approved = results.filter((result) => selectedUrls.has(result.url) && !resultAlreadySaved(result, references))
+    if (!approved.length) return
     setImportingTaskId(taskId)
     setError('')
     setMessage('')
     try {
       await importResearchResults(taskId, approved)
       setPreviews((current) => {
+        const next = { ...current }
+        delete next[taskId]
+        return next
+      })
+      setSelected((current) => {
         const next = { ...current }
         delete next[taskId]
         return next
@@ -239,9 +253,17 @@ export function ResearchPage() {
     const results = previews[task.id] ?? task.results ?? []
     const selectedUrls = new Set(selected[task.id] ?? [])
     const taskComic = comics.find((comic) => comic.id === task.comicId)
+    const savedResultUrls = new Set(results.filter((result) => resultAlreadySaved(result, references)).map((result) => result.url))
+    const selectedImportCount = results.filter((result) => selectedUrls.has(result.url) && !savedResultUrls.has(result.url)).length
+    const isPartiallyImported = task.status === 'imported' && savedResultUrls.size < results.length
+    const statusLabel = isPartiallyImported ? '待补充' : task.status === 'imported' ? '已导入' : '待执行'
+    const statusTone = isPartiallyImported ? 'amber' : task.status === 'imported' ? 'green' : 'blue'
     return <article className={`research-task research-task-card ${imported ? 'is-imported' : ''}`} key={task.id}>
-              <div className="research-task-summary"><div><span className={`status-badge ${task.status === 'imported' ? 'green' : 'blue'}`}>{task.status === 'imported' ? '已导入' : '待执行'}</span>{taskComic && <span className="research-comic-label">《{taskComic.title}》</span>}<div className="keyword-tags">{task.keywords.map((keyword) => <span key={keyword}>{keyword}</span>)}</div>{task.purpose ? <p className="task-purpose"><Compass size={13} />{task.purpose}</p> : <span className="purpose-hint">待补充调研目的</span>}<div className="research-filter-row"><span>图文</span>{task.filters.publishedWithin !== 'all' && <span>近一周</span>}<span>工作台未导入</span><span>按点赞排序</span></div><div className="task-meta-row"><span>跨词去重</span><span>上限 {task.limit} 条</span>{task.lastRunAt ? <span>最近查询 {task.lastRunAt}</span> : <span>创建于 {task.createdAt}</span>}</div></div><div className="task-actions"><button className="secondary-button" type="button" onClick={() => copyKeywords(task.id, task.keywords)}>{copied === task.id ? <Check size={16} /> : <Clipboard size={16} />}{copied === task.id ? '已复制' : '复制关键词'}</button>{task.status !== 'imported' && <button className="primary-button" type="button" onClick={() => runTask(task.id, task.comicId, task.keywords, task.limit, task.filters.publishedWithin)} disabled={runningTaskId === task.id}>{runningTaskId === task.id ? <LoaderCircle className="spin" size={16} /> : <Play size={16} />}{runningTaskId === task.id ? '筛选查询中…' : results.length ? '重新查询' : '本机执行'}</button>}</div></div>
-              {task.status !== 'imported' && results.length > 0 && <div className="research-preview"><div className="research-preview-heading"><strong>查询结果</strong><span>已选择 {selectedUrls.size}/{results.length} 条</span></div>{results.map((result) => <div className="research-result" key={result.url}><input aria-label={`选择 ${result.title}`} type="checkbox" checked={selectedUrls.has(result.url)} onChange={() => toggleResult(task.id, result.url)} /><span className="result-rank">{result.rank}</span><span><strong>{result.title}</strong><small>{result.matchedKeyword && <b className="result-keyword">{result.matchedKeyword}</b>}{result.author} · {result.likes.toLocaleString()} 赞{result.publishedAt ? ` · ${result.publishedAt}` : ''}</small></span><a aria-label={`打开 ${result.title}`} href={result.url} target="_blank" rel="noreferrer"><ExternalLink size={14} /></a></div>)}<button className="primary-button import-confirm" type="button" disabled={importingTaskId === task.id || selectedUrls.size === 0} onClick={() => confirmImport(task.id)}><Import size={15} />{importingTaskId === task.id ? '正在导入…' : `确认导入 ${selectedUrls.size} 条`}</button></div>}
+              <div className="research-task-summary"><div><span className={`status-badge ${statusTone}`}>{statusLabel}</span>{taskComic && <span className="research-comic-label">《{taskComic.title}》</span>}<div className="keyword-tags">{task.keywords.map((keyword) => <span key={keyword}>{keyword}</span>)}</div>{task.purpose ? <p className="task-purpose"><Compass size={13} />{task.purpose}</p> : <span className="purpose-hint">待补充调研目的</span>}<div className="research-filter-row"><span>图文</span>{task.filters.publishedWithin !== 'all' && <span>近一周</span>}<span>工作台未导入</span><span>按点赞排序</span></div><div className="task-meta-row"><span>跨词去重</span><span>上限 {task.limit} 条</span>{task.lastRunAt ? <span>最近查询 {task.lastRunAt}</span> : <span>创建于 {task.createdAt}</span>}</div></div><div className="task-actions"><button className="secondary-button" type="button" onClick={() => copyKeywords(task.id, task.keywords)}>{copied === task.id ? <Check size={16} /> : <Clipboard size={16} />}{copied === task.id ? '已复制' : '复制关键词'}</button>{task.status !== 'imported' && <button className="primary-button" type="button" onClick={() => runTask(task.id, task.comicId, task.keywords, task.limit, task.filters.publishedWithin)} disabled={runningTaskId === task.id}>{runningTaskId === task.id ? <LoaderCircle className="spin" size={16} /> : <Play size={16} />}{runningTaskId === task.id ? '筛选查询中…' : results.length ? '重新查询' : '本机执行'}</button>}</div></div>
+              {results.length > 0 && <div className="research-preview"><div className="research-preview-heading"><strong>查询结果</strong><span>已选择 {selectedImportCount}/{results.length - savedResultUrls.size} 条{savedResultUrls.size > 0 ? ` · 已保存 ${savedResultUrls.size} 条` : ''}</span></div>{results.map((result) => {
+                const isSaved = savedResultUrls.has(result.url)
+                return <div className={`research-result ${isSaved ? 'is-saved' : ''}`} key={result.url}><input aria-label={isSaved ? `${result.title} 已保存` : `选择 ${result.title}`} type="checkbox" checked={isSaved || selectedUrls.has(result.url)} disabled={isSaved} onChange={() => toggleResult(task.id, result.url)} /><span className="result-rank">{result.rank}</span><span><strong>{result.title}{isSaved && <b className="result-saved-badge">已保存</b>}</strong><small>{result.matchedKeyword && <b className="result-keyword">{result.matchedKeyword}</b>}{result.author} · {result.likes.toLocaleString()} 赞{result.publishedAt ? ` · ${result.publishedAt}` : ''}</small></span><a aria-label={`打开 ${result.title}`} href={result.url} target="_blank" rel="noreferrer"><ExternalLink size={14} /></a></div>
+              })}<button className="primary-button import-confirm" type="button" disabled={importingTaskId === task.id || selectedImportCount === 0} onClick={() => confirmImport(task.id)}><Import size={15} />{importingTaskId === task.id ? '正在导入…' : `${task.status === 'imported' ? '补充导入' : '确认导入'} ${selectedImportCount} 条`}</button></div>}
             </article>
   }
 
@@ -278,7 +300,7 @@ export function ResearchPage() {
 
       <section className="research-layout">
         <div className="panel tint-sky">
-          <div className="panel-heading"><div><h2>调研任务</h2><p>运行后先预览，再选择需要写入候选库的笔记</p></div><span className="count-chip">{pendingTasks.length} 个待执行</span></div>
+          <div className="panel-heading"><div><h2>调研任务</h2><p>运行后先预览，再选择需要写入候选库的笔记</p></div><span className="count-chip">{pendingTasks.length} 个待处理</span></div>
           <div className="task-list">{tasks.length ? <>
             {pendingTasks.map((task) => renderTask(task))}
             {importedTasks.length > 0 && <div className="imported-section"><button className="imported-toggle" type="button" onClick={() => setShowImported((value) => !value)}>{showImported ? <ChevronDown size={15} /> : <ChevronRight size={15} />}<span>已导入任务 · {importedTasks.length}</span><small>{showImported ? '收起' : '展开查看'}</small></button>{showImported && importedTasks.map((task) => renderTask(task, true))}</div>}

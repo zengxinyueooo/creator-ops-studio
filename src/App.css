@@ -592,6 +592,9 @@
 .imported-toggle small { margin-left: auto; color: #948da2; font-size: 11px; font-weight: 600; }
 .research-task.is-imported { opacity: .62; }
 .research-task.is-imported:hover { opacity: 1; }
+.research-result.is-saved { background: rgba(234, 249, 241, .62); }
+.research-result input:disabled { cursor: default; }
+.result-saved-badge { display: inline-flex; margin-left: 7px; padding: 2px 7px; border-radius: 999px; color: #128f5c; background: #def7e9; font-size: 9.5px; font-weight: 800; vertical-align: 1px; }
 
 /* ---------- 轻提示 toast ---------- */
 .toast-pill { position: fixed; top: 18px; left: 50%; z-index: 95; transform: translateX(-50%); display: inline-flex; align-items: center; max-width: min(540px, 88vw); padding: 11px 22px; border: 1px solid rgba(255,255,255,.95); border-radius: 999px; color: #4f7a63; background: rgba(240,253,246,.97); box-shadow: 0 18px 44px rgba(40,20,80,.16); font-size: 12.5px; font-weight: 700; backdrop-filter: blur(8px); animation: toast-drop .3s cubic-bezier(.22,1,.36,1); }
