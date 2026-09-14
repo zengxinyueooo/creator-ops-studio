@@ -4,6 +4,8 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { getComicProfileProgress, normalizeComicProfile } from '../lib/comicProfile'
 import { enrichKuaikanComicProfile } from '../lib/kuaikanProfileEnrichment'
 import { runAgentWorkflow } from '../lib/agentWorkflow'
+import { useRecoveredAgentRun } from '../lib/useRecoveredAgentRun'
+import { AgentRunStatus } from '../components/AgentRunStatus'
 import { dataMode } from '../lib/supabase'
 import { useWorkspace } from '../store/WorkspaceContext'
 import type { Comic } from '../types'
@@ -23,7 +25,7 @@ const serializationLabels = {
 
 const COVER_TONES = ['pink', 'blue', 'purple', 'amber'] as const
 
-function ComicCard({ comic, mode, tone, onEdit, onEnrich, enriching, enrichmentFeedback, onKeep, onDrop }: {
+function ComicCard({ comic, mode, tone, onEdit, onEnrich, enriching, enrichmentFeedback, onKeep, onDrop, onRecoveredSuccess }: {
   comic: Comic
   mode: 'candidate' | 'selected'
   tone: string
@@ -33,7 +35,13 @@ function ComicCard({ comic, mode, tone, onEdit, onEnrich, enriching, enrichmentF
   enrichmentFeedback?: { type: 'success' | 'error'; message: string }
   onKeep?: () => void
   onDrop?: () => void
+  onRecoveredSuccess?: () => void | Promise<void>
 }) {
+  const recovered = useRecoveredAgentRun(
+    { runType: 'comic_profile_enrichment', targetType: 'comic', targetId: comic.id },
+    onRecoveredSuccess,
+  )
+  const busy = enriching || recovered.active
   const platform = platformLabels[comic.platform] ?? comic.platform
   const serialization = serializationLabels[comic.serializationStatus]
   const profile = normalizeComicProfile(comic.contentProfile)
@@ -56,13 +64,14 @@ function ComicCard({ comic, mode, tone, onEdit, onEnrich, enriching, enrichmentF
           {profileTags.length > 0 && <div className="comic-profile-tags">{profileTags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
         </div>
         <div className="comic-profile-buttons">
-          {mode === 'selected' && <button className="comic-profile-button auto" type="button" disabled={enriching} onClick={onEnrich}>
-            {enriching ? <LoaderCircle className="spin" size={15} /> : <Sparkles size={15} />}
-            {enriching ? '正在读取快看官网…' : profileProgress.isEmpty ? '自动补全官方档案' : '重新核验官方档案'}
+          {mode === 'selected' && <button className="comic-profile-button auto" type="button" disabled={busy} onClick={onEnrich}>
+            {busy ? <LoaderCircle className="spin" size={15} /> : <Sparkles size={15} />}
+            {busy ? '正在读取快看官网…' : profileProgress.isEmpty ? '自动补全官方档案' : '重新核验官方档案'}
           </button>}
-          <button className="comic-profile-button" type="button" disabled={enriching} onClick={onEdit}><BookOpen size={15} />{profileProgress.isEmpty ? '手动补充' : '查看 / 编辑'}</button>
+          <button className="comic-profile-button" type="button" disabled={busy} onClick={onEdit}><BookOpen size={15} />{profileProgress.isEmpty ? '手动补充' : '查看 / 编辑'}</button>
         </div>
         {enrichmentFeedback && <p className={`comic-enrichment-feedback ${enrichmentFeedback.type}`}>{enrichmentFeedback.message}</p>}
+        {mode === 'selected' && <AgentRunStatus run={recovered.run} error={recovered.error} successText="官方档案已更新" />}
         <div className="comic-card-footer">
           <div className="comic-source-links">
             {profile.officialSourceUrl && <a href={profile.officialSourceUrl} target="_blank" rel="noreferrer">快看官方页 <ArrowUpRight size={14} /></a>}
@@ -79,7 +88,7 @@ function ComicCard({ comic, mode, tone, onEdit, onEnrich, enriching, enrichmentF
 }
 
 export function ComicsPage() {
-  const { activeAccount, state, addComic, saveComicProfile, updateComicStatus } = useWorkspace()
+  const { activeAccount, state, addComic, saveComicProfile, updateComicStatus, reloadWorkspace } = useWorkspace()
   const [editingId, setEditingId] = useState<string>()
   const [showForm, setShowForm] = useState(false)
   const [title, setTitle] = useState('')
@@ -192,7 +201,7 @@ export function ComicsPage() {
 
       <section className="comic-section">
         <div className="comic-section-heading"><div><span className="comic-step done">2</span><span><h2>我的漫画库</h2><p>你确认保留、后续准备做内容的漫画</p></span></div><span>{selected.length} 部</span></div>
-        {selected.length ? <div className="comic-grid">{selected.map((comic, index) => <ComicCard key={comic.id} comic={comic} onEdit={() => setEditingId(comic.id)} onEnrich={() => void enrichProfile(comic)} enriching={enrichingId === comic.id} enrichmentFeedback={enrichmentFeedback[comic.id]} mode="selected" tone={COVER_TONES[index % COVER_TONES.length]} />)}</div> : <div className="comic-empty"><Library size={22} /><strong>还没有保留的漫画</strong><span>审核候选漫画后，它会出现在这里。</span></div>}
+        {selected.length ? <div className="comic-grid">{selected.map((comic, index) => <ComicCard key={comic.id} comic={comic} onEdit={() => setEditingId(comic.id)} onEnrich={() => void enrichProfile(comic)} enriching={enrichingId === comic.id} enrichmentFeedback={enrichmentFeedback[comic.id]} onRecoveredSuccess={reloadWorkspace} mode="selected" tone={COVER_TONES[index % COVER_TONES.length]} />)}</div> : <div className="comic-empty"><Library size={22} /><strong>还没有保留的漫画</strong><span>审核候选漫画后，它会出现在这里。</span></div>}
       </section>
     </>
   )
