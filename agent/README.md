@@ -8,6 +8,6 @@
 2. 在 `.env.local` 配置 `SUPABASE_SERVICE_ROLE_KEY`，不得加上 `VITE_` 前缀。
 3. 使用 `pnpm dev:agent` 同时启动页面和 Worker。
 
-默认模型为 `openai-codex/gpt-5.6-terra`，可用 `PI_RESEARCH_MODEL` 覆盖。Worker 使用 Pi 常规 Agent 目录中的 Codex 认证，并通过 `CREATOR_OPS_APP_URL` 访问本地 Vite 桥。该地址必须与实际页面服务地址一致。
+默认模型为 `openai-codex/gpt-5.6-terra`，可用 `PI_RESEARCH_MODEL` 覆盖。Worker 使用 Pi 常规 Agent 目录中的 Codex 认证，并通过 `CREATOR_OPS_APP_URL` 访问本地 Vite 桥；未配置时默认使用 `http://127.0.0.1:5173`。该地址必须与实际页面服务地址一致。
 
 `pnpm worker` 可单独启动 Worker；`pnpm worker:once` 只进行一轮领取处理。上述命令用于实际运行，不是只读校验。

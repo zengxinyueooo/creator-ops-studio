@@ -12,7 +12,7 @@ type EventWriter = (run: WorkflowRun, eventType: string, step: string, message: 
 
 const text = (value: unknown, limit = 1200) => typeof value === 'string' ? value.trim().slice(0, limit) : ''
 const strings = (value: unknown, limit = 10, itemLimit = 240) => Array.isArray(value) ? [...new Set(value.map((item) => text(item, itemLimit)).filter(Boolean))].slice(0, limit) : []
-const appUrl = () => process.env.CREATOR_OPS_APP_URL ?? 'http://127.0.0.1:5199'
+const appUrl = () => process.env.CREATOR_OPS_APP_URL ?? 'http://127.0.0.1:5173'
 
 function structuredText(value: unknown, limit = 1200): string {
   if (typeof value === 'string') return value.trim().slice(0, limit)
