@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom'
 import { searchXiaohongshuBatch } from '../lib/opencliBridge'
 import { enqueueCloudResearchRun, loadLatestCloudResearchRun } from '../lib/workspaceRepository'
 import { agentProgressMessage, runAgentWorkflow } from '../lib/agentWorkflow'
+import { useRecoveredAgentRun } from '../lib/useRecoveredAgentRun'
+import { AgentRunStatus } from '../components/AgentRunStatus'
 import { dataMode } from '../lib/supabase'
 import { PillSelect } from '../components/PillSelect'
 import { ExecutionHistory } from '../components/ExecutionHistory'
@@ -32,8 +34,32 @@ function resultAlreadySaved(result: XhsResearchResult, references: ReferenceItem
   ))
 }
 
+function ReferenceActions({ reference, locallyCapturing, reviewing, onCapture, onReview, onRecoveredSuccess }: {
+  reference: ReferenceItem
+  locallyCapturing: boolean
+  reviewing: boolean
+  onCapture: () => void
+  onReview: (status: ReferenceItem['reviewStatus']) => void
+  onRecoveredSuccess: () => void | Promise<void>
+}) {
+  const recovered = useRecoveredAgentRun(
+    { runType: 'note_capture', targetType: 'reference', targetId: reference.id },
+    onRecoveredSuccess,
+  )
+  const busy = locallyCapturing || recovered.active
+  return <>
+    <div className="reference-actions">
+      <a className="icon-button" aria-label="打开原笔记" href={reference.sourceUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /></a>
+      {reference.reviewStatus === 'kept' && <button className="secondary-button capture-button" type="button" disabled={busy} onClick={onCapture}>{busy ? <LoaderCircle className="spin" size={14} /> : <ImageDown size={14} />}{busy ? '采集中…' : reference.detailStatus === 'detailed' ? '重新采集' : '采集详情与素材'}</button>}
+      <button className="secondary-button" type="button" disabled={reviewing || busy} onClick={() => onReview('rejected')}><X size={14} />排除</button>
+      <button className="secondary-button keep-button" type="button" disabled={reviewing || busy} onClick={() => onReview('kept')}><Check size={14} />保留</button>
+    </div>
+    <AgentRunStatus run={recovered.run} error={recovered.error} successText="详情与图片素材已采集" />
+  </>
+}
+
 export function ResearchPage() {
-  const { activeAccount, state, addResearchTask, saveResearchResults, importResearchResults, updateReferenceReview, captureReferenceAssets, createTopicFromReferences } = useWorkspace()
+  const { activeAccount, state, addResearchTask, saveResearchResults, importResearchResults, updateReferenceReview, captureReferenceAssets, createTopicFromReferences, reloadWorkspace } = useWorkspace()
   const comics = state.comics.filter((comic) => comic.accountId === activeAccount.id && comic.status !== 'archived')
   const validComicIds = new Set(comics.map((comic) => comic.id))
   const references = state.references.filter((reference) => reference.accountId === activeAccount.id && reference.comicId && validComicIds.has(reference.comicId))
@@ -408,7 +434,7 @@ export function ResearchPage() {
             <label className="reference-select"><input type="checkbox" checked={isSelected} disabled={wrongComic} onChange={() => toggleReference(reference)} /><span /></label>
             {reference.coverUrl && <div className="reference-cover"><img src={reference.coverUrl} alt={reference.title} loading="lazy" /></div>}
             <div className="reference-main"><div className="reference-card-top"><span className={`status-badge ${review.tone}`}>{review.label}</span>{comic && <span className="research-comic-label">《{comic.title}》</span>}{reference.topicIds.length > 0 && <span className="linked-topic-chip"><Layers3 size={12} />已关联 {reference.topicIds.length} 个选题</span>}</div><h3>{reference.title}</h3><p>{reference.body || (reference.detailStatus === 'failed' ? `上次采集未完成：${reference.detailError}` : '当前仅保存了列表信息；保留后可采集正文、话题和全部图片。')}</p>{reference.hashtags.length > 0 && <div className="reference-tags">{reference.hashtags.slice(0, 6).map((tag) => <span key={tag}>#{tag}</span>)}</div>}<small>{reference.author} · {reference.likes.toLocaleString()} 赞{reference.publishedAt ? ` · ${reference.publishedAt}` : ''} · {reference.detailStatus === 'detailed' ? `详情已采集 · ${reference.imageCount} 张图` : reference.detailStatus === 'failed' ? '采集失败，可人工重试' : '待采集详情'}</small></div>
-            <div className="reference-actions"><a className="icon-button" aria-label="打开原笔记" href={reference.sourceUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /></a>{reference.reviewStatus === 'kept' && <button className="secondary-button capture-button" type="button" disabled={capturingReferenceId === reference.id} onClick={() => void captureReference(reference)}>{capturingReferenceId === reference.id ? <LoaderCircle className="spin" size={14} /> : <ImageDown size={14} />}{capturingReferenceId === reference.id ? '采集中…' : reference.detailStatus === 'detailed' ? '重新采集' : '采集详情与素材'}</button>}<button className="secondary-button" type="button" disabled={reviewingReferenceId === reference.id || capturingReferenceId === reference.id} onClick={() => void reviewReference(reference.id, 'rejected')}><X size={14} />排除</button><button className="secondary-button keep-button" type="button" disabled={reviewingReferenceId === reference.id || capturingReferenceId === reference.id} onClick={() => void reviewReference(reference.id, 'kept')}><Check size={14} />保留</button></div>
+            <ReferenceActions reference={reference} locallyCapturing={capturingReferenceId === reference.id} reviewing={reviewingReferenceId === reference.id} onCapture={() => void captureReference(reference)} onReview={(status) => void reviewReference(reference.id, status)} onRecoveredSuccess={reloadWorkspace} />
             {(captureFeedback[reference.id] || reference.detailStatus === 'failed') && <p className={`capture-feedback ${captureFeedback[reference.id]?.error || (!captureFeedback[reference.id] && reference.detailStatus === 'failed') ? 'is-error' : ''}`} role="status" aria-live="polite">{captureFeedback[reference.id]?.text ?? `上次采集失败：${reference.detailError}`}</p>}
             {dataMode === 'supabase' && <ExecutionHistory targetId={reference.id} />}
           </article>
