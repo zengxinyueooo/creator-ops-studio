@@ -9,20 +9,40 @@ function client() {
   return supabase
 }
 
+export async function workflowTargetId(input: { runType: AgentRunType; targetId: string; accountId: string; payload?: Record<string, unknown> }) {
+  if (input.runType !== 'topic_synthesis') return input.targetId
+  const referenceIds = Array.isArray(input.payload?.referenceIds)
+    ? input.payload.referenceIds.filter((value): value is string => typeof value === 'string').sort()
+    : []
+  const bytes = new TextEncoder().encode(`${input.accountId}:${referenceIds.join(',')}`)
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)).slice(0, 16)
+  digest[6] = (digest[6] & 0x0f) | 0x50
+  digest[8] = (digest[8] & 0x3f) | 0x80
+  const hex = Array.from(digest, (value) => value.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
 export async function enqueueAgentWorkflow(input: { runType: AgentRunType; targetType: AgentTargetType; targetId: string; accountId: string; payload?: Record<string, unknown> }) {
   const db = client()
   const { data: auth, error: authError } = await db.auth.getUser()
   if (authError) throw authError
   if (!auth.user) throw new Error('请先登录')
-  const { data: active, error: activeError } = await db.from('agent_runs').select('id').eq('run_type', input.runType).eq('target_type', input.targetType).eq('target_id', input.targetId).in('status', ['queued', 'running']).limit(1).maybeSingle()
+  const targetId = await workflowTargetId(input)
+  const findActive = () => db.from('agent_runs').select('id').eq('run_type', input.runType).eq('target_type', input.targetType).eq('target_id', targetId).in('status', ['queued', 'running']).limit(1).maybeSingle()
+  const { data: active, error: activeError } = await findActive()
   if (activeError) throw activeError
   if (active) return active.id as string
   const row = {
     user_id: auth.user.id, account_id: input.accountId, run_type: input.runType,
-    target_type: input.targetType, target_id: input.targetId, input: input.payload ?? {}, status: 'queued',
-    ...(input.runType === 'research_discovery' ? { research_task_id: input.targetId } : {}),
+    target_type: input.targetType, target_id: targetId, input: input.payload ?? {}, status: 'queued',
+    ...(input.runType === 'research_discovery' ? { research_task_id: targetId } : {}),
   }
   const { data, error } = await db.from('agent_runs').insert(row).select('id').single()
+  if (error?.code === '23505') {
+    const { data: concurrent, error: concurrentError } = await findActive()
+    if (concurrentError) throw concurrentError
+    if (concurrent) return concurrent.id as string
+  }
   if (error) throw error
   return data.id as string
 }

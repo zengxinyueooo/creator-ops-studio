@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest'
-import { agentProgressMessage } from './agentWorkflow'
+import { agentProgressMessage, workflowTargetId } from './agentWorkflow'
 import type { AgentRun } from '../types'
 
 vi.mock('./supabase', () => ({ supabase: null }))
@@ -13,4 +13,15 @@ it('distinguishes an unclaimed queued job from an executing capture', () => {
 
 it('shows terminal errors instead of stale starting progress', () => {
   expect(agentProgressMessage({ id: 'one', status: 'failed', currentStep: 'failed', output: {}, createdAt: '', errorMessage: '模型额度不足', events: [] })).toBe('模型额度不足')
+})
+
+it('uses a stable target for the same topic synthesis reference set', async () => {
+  const first = await workflowTargetId({ runType: 'topic_synthesis', targetId: crypto.randomUUID(), accountId: 'account', payload: { referenceIds: ['b', 'a'] } })
+  const second = await workflowTargetId({ runType: 'topic_synthesis', targetId: crypto.randomUUID(), accountId: 'account', payload: { referenceIds: ['a', 'b'] } })
+  expect(first).toBe(second)
+  expect(first).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+})
+
+it('keeps the business target for workflows with a persistent object', async () => {
+  await expect(workflowTargetId({ runType: 'brief_generation', targetId: 'topic-1', accountId: 'account' })).resolves.toBe('topic-1')
 })
