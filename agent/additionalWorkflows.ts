@@ -98,6 +98,7 @@ async function profileWorkflow(root: string, db: SupabaseClient, run: WorkflowRu
   } })
   const save = defineTool({ name: 'save_comic_profile', label: '保存漫画档案', description: 'Save a profile derived only from the fetched official fields.', parameters: Type.Object({ setting: Type.String(), mainCharacters: Type.Array(Type.String()), relationshipSummary: Type.String(), coreConflicts: Type.Array(Type.String()), contentThemes: Type.Array(Type.String()), toneTags: Type.Array(Type.String()), spoilerBoundary: Type.String() }), execute: async (_id, params) => {
     if (!comic || !official) throw new Error('必须先读取漫画和官网资料')
+    await event(run, 'tool_started', 'saving_profile', '正在保存漫画档案')
     const profile = { officialSynopsis: text(official.officialSynopsis, 5000), officialSourceUrl: text(official.officialSourceUrl, 1000), setting: text(params.setting, 300), mainCharacters: strings(params.mainCharacters, 8, 60), relationshipSummary: text(params.relationshipSummary, 500), coreConflicts: strings(params.coreConflicts, 6, 120), contentThemes: strings(params.contentThemes, 6, 40), toneTags: strings(params.toneTags, 6, 24), spoilerBoundary: text(params.spoilerBoundary, 300), updatedAt: new Date().toISOString() }
     const cover = official.cover as { downloadUrl: string; filename: string; mimeType: string } | undefined
     let coverPath: string | undefined
@@ -285,6 +286,7 @@ async function generatedWorkflow(root: string, db: SupabaseClient, run: Workflow
   } })
   const save = defineTool({ name: 'save_generated_result', label: '保存生成结果', description: 'Persist the generated result for this run. Use fields required by the loaded Skill.', parameters: Type.Object({ result: Type.Record(Type.String(), Type.Unknown()) }), execute: async (_id, params) => {
     if (!context) throw new Error('必须先读取上下文'); const result = params.result as Record<string, unknown>
+    await event(run, 'tool_started', 'saving_result', '正在保存生成结果')
     if (run.run_type === 'topic_synthesis') {
       const refs = context.references as Record<string, any>[]; const comicId = refs[0]?.comic_id; if (!comicId || refs.some((r) => r.comic_id !== comicId)) throw new Error('参考笔记必须属于同一漫画')
       const title = text(result.title, 120) || text(run.input.title, 120)

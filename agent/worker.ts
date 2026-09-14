@@ -137,6 +137,7 @@ async function executeResearchRun(db: SupabaseClient, run: AgentRun, lease: RunL
       if (!searchCompleted) throw new Error('必须先完成搜索才能保存候选')
       const allowed = new Set(params.ranks)
       if (params.ranks.some((rank) => !searched.some((item) => item.rank === rank))) throw new Error('包含不属于本次搜索结果的编号')
+      await addEvent(db, run, lease, 'tool_started', 'saving_results', '正在保存调研候选')
       const results = searched.filter((item) => allowed.has(item.rank)).map((item, index) => ({ ...item, rank: index + 1 }))
       const now = new Date().toISOString()
       const { error } = await db.from('research_tasks').update({ result_snapshot: results, last_run_at: now }).eq('id', run.research_task_id).eq('user_id', run.user_id)
