@@ -7,10 +7,12 @@ import { AiGenerationError, generateAiJson } from '../lib/aiClient'
 import { useWorkspace } from '../store/WorkspaceContext'
 import { runAgentWorkflow } from '../lib/agentWorkflow'
 import { dataMode } from '../lib/supabase'
+import { useRecoveredAgentRun } from '../lib/useRecoveredAgentRun'
+import { AgentRunStatus } from '../components/AgentRunStatus'
 
 export function DraftsPage() {
   const { user } = useAuth()
-  const { accountTopics, state, markTopicPublished } = useWorkspace()
+  const { accountTopics, state, markTopicPublished, reloadWorkspace } = useWorkspace()
   const briefTopics = accountTopics.filter((topic) => topic.brief)
   const [selectedId, setSelectedId] = useState(() => briefTopics.find((topic) => topic.brief?.status === 'approved')?.id ?? briefTopics[0]?.id ?? '')
   const selected = briefTopics.find((topic) => topic.id === selectedId) ?? briefTopics[0]
@@ -31,6 +33,18 @@ export function DraftsPage() {
   const owner = user?.id ?? 'local'
   const saved = drafts.find(draft => draft.id === draftId)
   const dirty = !!pendingDraft || !!saved && (saved.title !== draftTitle || saved.body !== draftBody || JSON.stringify(saved.hashtags) !== JSON.stringify(hashtags))
+  const recoveredDraft = useRecoveredAgentRun(
+    { runType: 'draft_generation', targetType: 'topic', targetId: selected?.id },
+    async () => {
+      await reloadWorkspace()
+      if (!selected?.id) return
+      const latest = await loadDrafts(owner, selected.id)
+      setDrafts(latest)
+      openDraft(latest[0])
+      setMessage('Pi 已生成并保存新版本，可继续编辑。')
+    },
+  )
+  const draftBusy = generating || recoveredDraft.active
 
   function openDraft(draft?: SavedDraft) {
     setDraftId(draft?.id ?? '')
@@ -172,11 +186,12 @@ export function DraftsPage() {
 
   return (
     <>
-      <section className="page-heading compact-heading"><div><span className="eyebrow">BRIEF + ASSETS → COPY</span><h1>文案工作台</h1><p>文案只使用已通过的 Brief 与你勾选、已完成视觉分析的素材；标记发布后才累计素材使用次数。</p></div><button className="primary-button" disabled={generating} onClick={() => void generateDraft()}><Sparkles size={17} />{generating ? '正在调用模型…' : '基于 Brief 生成'}</button></section>
+      <section className="page-heading compact-heading"><div><span className="eyebrow">BRIEF + ASSETS → COPY</span><h1>文案工作台</h1><p>文案只使用已通过的 Brief 与你勾选、已完成视觉分析的素材；标记发布后才累计素材使用次数。</p></div><button className="primary-button" disabled={draftBusy} onClick={() => void generateDraft()}><Sparkles size={17} />{draftBusy ? '正在调用模型…' : '基于 Brief 生成'}</button></section>
+      <AgentRunStatus run={recoveredDraft.run} error={recoveredDraft.error} successText="草稿新版本已生成" />
       <section className="draft-layout">
         <aside className="panel tint-sky draft-list"><div className="panel-heading"><div><h2>内容 Brief</h2><p>{briefTopics.length} 份候选</p></div><FileText size={18} /></div>{briefTopics.map((topic) => <button key={topic.id} disabled={generating || saving || dirty} onClick={() => { setSelectedId(topic.id); setMessage('') }} className={topic.id === selected?.id ? 'draft-item active' : 'draft-item'}><span>{topic.title.slice(0, 1)}</span><div><strong>{topic.title}</strong><small>{topic.brief?.status === 'approved' ? 'Brief 已通过' : '等待 Brief 审核'} · {topic.assetCount} 张素材</small></div></button>)}{!briefTopics.length && <div className="empty-state">还没有内容 Brief。</div>}</aside>
         <div className="panel tint-peach editor-panel">
-          <div className="editor-heading"><div><span className={`status-badge ${selected?.brief?.status === 'approved' ? 'green' : 'amber'}`}>{selected?.brief?.status === 'approved' ? 'Brief 已通过' : 'Brief 待审核'}</span><h2>{selected?.title ?? '暂无选题'}</h2></div><div className="button-row"><button className="icon-button" aria-label="复制文案" onClick={() => void copyDraft()}><Copy size={16} /></button><button className="secondary-button" disabled={generating} onClick={() => void generateDraft()}><PenLine size={16} />{generating ? '正在生成…' : '生成新版本'}</button></div></div>
+          <div className="editor-heading"><div><span className={`status-badge ${selected?.brief?.status === 'approved' ? 'green' : 'amber'}`}>{selected?.brief?.status === 'approved' ? 'Brief 已通过' : 'Brief 待审核'}</span><h2>{selected?.title ?? '暂无选题'}</h2></div><div className="button-row"><button className="icon-button" aria-label="复制文案" onClick={() => void copyDraft()}><Copy size={16} /></button><button className="secondary-button" disabled={draftBusy} onClick={() => void generateDraft()}><PenLine size={16} />{draftBusy ? '正在生成…' : '生成新版本'}</button></div></div>
 
           {selected?.brief && <div className="copy-brief-summary"><span>{selected.brief.coreEmotion}</span><p>{selected.brief.angle}</p><blockquote>{selected.brief.hook}</blockquote></div>}
 

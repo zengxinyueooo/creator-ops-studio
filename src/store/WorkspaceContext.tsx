@@ -77,6 +77,7 @@ interface WorkspaceContextValue {
   analyzePendingAssets: (limit?: number) => Promise<{ analyzed: number; skipped: number }>
   toggleTopicAsset: (topicId: string, assetId: string) => Promise<void>
   markTopicPublished: (topicId: string) => Promise<void>
+  reloadWorkspace: () => Promise<void>
   resetDemo: () => void
 }
 
@@ -887,6 +888,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         assets: current.assets.map((asset) => selectedAssets.some((selectedAsset) => selectedAsset.id === asset.id) ? { ...asset, usageCount: asset.usageCount + 1, coverUsageCount: asset.coverUsageCount + (selectedAssets[0]?.id === asset.id ? 1 : 0), lastUsedAt: '刚刚' } : asset),
       }))
     },
+    reloadWorkspace: () => reload(),
     resetDemo: () => dataMode === 'local' ? setState(demoState) : void reload(),
   }), [accountTopics, activeAccount, reload, state, user])
 

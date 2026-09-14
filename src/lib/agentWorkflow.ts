@@ -63,6 +63,19 @@ export async function loadAgentRun(runId: string): Promise<AgentRun> {
   }
 }
 
+export async function loadLatestAgentWorkflow(input: { runType: AgentRunType; targetType: AgentTargetType; targetId: string }) {
+  const db = client()
+  const { data, error } = await db.from('agent_runs').select('id')
+    .eq('run_type', input.runType)
+    .eq('target_type', input.targetType)
+    .eq('target_id', input.targetId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  return data ? loadAgentRun(data.id as string) : null
+}
+
 export async function waitForAgentRun(runId: string, onProgress?: (run: AgentRun) => void, timeoutMs = 10 * 60_000) {
   const deadline = Date.now() + timeoutMs
   let lastStatus: AgentRunStatus = 'queued'

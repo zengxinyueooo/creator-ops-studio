@@ -636,3 +636,9 @@
 .agent-progress.failed { background: rgba(210, 55, 55, .08); }
 .capture-feedback { grid-column: 1 / -1; flex-basis: 100%; margin: 8px 0 0; padding: 10px 12px; border-radius: 8px; background: #eef5ff; color: #34547a; font-size: 13px; overflow-wrap: anywhere; }
 .capture-feedback.is-error { background: #fff0ee; color: #a52c35; }
+.agent-run-status { display: flex; align-items: flex-start; gap: 9px; margin: 0 0 14px; padding: 11px 14px; border-radius: 12px; color: #34547a; background: #eef5ff; font-size: 12px; }
+.agent-run-status > div { display: grid; gap: 3px; }
+.agent-run-status strong { color: var(--text-primary); font-size: 13px; }
+.agent-run-status span { overflow-wrap: anywhere; }
+.agent-run-status.succeeded { color: #14764f; background: #e8f8f0; }
+.agent-run-status.failed { color: #a52c35; background: #fff0ee; }

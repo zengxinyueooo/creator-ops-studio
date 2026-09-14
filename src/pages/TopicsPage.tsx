@@ -7,6 +7,8 @@ import { statusMeta } from '../data/status'
 import { useWorkspace } from '../store/WorkspaceContext'
 import { runAgentWorkflow } from '../lib/agentWorkflow'
 import { dataMode } from '../lib/supabase'
+import { useRecoveredAgentRun } from '../lib/useRecoveredAgentRun'
+import { AgentRunStatus } from '../components/AgentRunStatus'
 import type { TopicStatus } from '../types'
 
 const columns: TopicStatus[] = ['idea', 'research', 'materials', 'draft', 'review', 'approved', 'published']
@@ -18,7 +20,7 @@ function evidenceTime(value?: string) {
 }
 
 export function TopicsPage() {
-  const { activeAccount, accountTopics, state, updateTopicStatus, addTopic, generateTopicBrief, setTopicBriefStatus } = useWorkspace()
+  const { activeAccount, accountTopics, state, updateTopicStatus, addTopic, generateTopicBrief, setTopicBriefStatus, reloadWorkspace } = useWorkspace()
   const navigate = useNavigate()
   const comics = state.comics.filter((comic) => comic.accountId === activeAccount.id && comic.status !== 'archived')
   const [showForm, setShowForm] = useState(false)
@@ -30,6 +32,14 @@ export function TopicsPage() {
   const [briefError, setBriefError] = useState('')
   const [generatingBriefId, setGeneratingBriefId] = useState<string | null>(null)
   const selectedBrief = accountTopics.find((topic) => topic.id === selectedBriefId && topic.brief) ?? accountTopics.find((topic) => topic.brief)
+  const recoveredBrief = useRecoveredAgentRun(
+    { runType: 'brief_generation', targetType: 'topic', targetId: selectedBriefId || undefined },
+    async (run) => {
+      await reloadWorkspace()
+      setSelectedBriefId(String(run.output.topicId ?? selectedBriefId))
+    },
+  )
+  const briefBusy = generatingBriefId !== null || recoveredBrief.active
 
   function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -40,6 +50,7 @@ export function TopicsPage() {
 
   async function createBrief(topicId: string) {
     if (generatingBriefId) return
+    setSelectedBriefId(topicId)
     setGeneratingBriefId(topicId)
     setBriefError('')
     try {
@@ -83,6 +94,7 @@ export function TopicsPage() {
     <>
       <section className="page-heading compact-heading"><div><span className="eyebrow">CONTENT PIPELINE</span><h1>选题工作流</h1><p>从灵感到发布准备，所有关键节点由你审核。</p></div><div className="button-row"><button className="secondary-button"><SlidersHorizontal size={16} />筛选</button><button className="primary-button" onClick={() => setShowForm((value) => !value)}><Plus size={17} />新建选题</button></div></section>
       {showForm && <form className="quick-form topic-quick-form" onSubmit={submit}><PillSelect value={comicId} ariaLabel="关联漫画" placeholder="不关联漫画" options={[{ value: '', label: '不关联漫画' }, ...comics.map((comic) => ({ value: comic.id, label: comic.title }))]} onChange={setComicId} /><input autoFocus placeholder="选题标题" value={title} onChange={(e) => setTitle(e.target.value)} /><input placeholder="章节或内容角度" value={subtitle} onChange={(e) => setSubtitle(e.target.value)} /><PillSelect value={pillar} ariaLabel="内容支柱" placeholder="选择内容支柱" options={activeAccount.pillars.map((item) => ({ value: item, label: item }))} onChange={setPillar} /><button className="primary-button" type="submit">加入灵感池</button></form>}
+      <AgentRunStatus run={recoveredBrief.run} error={recoveredBrief.error} successText="Brief 已生成" />
       {briefError && !selectedBrief?.brief && <p className="research-error">{briefError}</p>}
       {selectedBrief?.brief && <section className="brief-panel panel tint-lilac">
         <div className="brief-panel-heading"><div><span className="eyebrow">XIAOHONGSHU CONTENT BRIEF</span><h2>{selectedBrief.title}</h2><p>{selectedBrief.subtitle} · {selectedBrief.brief.generationMode === 'model' ? `AI 生成 · ${selectedBrief.brief.model ?? '硅基流动'}` : selectedBrief.brief.generationMode === 'template' ? '模板草稿（未调用模型）' : '历史草稿'}</p></div><span className={`status-badge ${selectedBrief.brief.status === 'approved' ? 'green' : selectedBrief.brief.status === 'rejected' ? 'gray' : 'amber'}`}>{selectedBrief.brief.status === 'approved' ? 'Brief 已通过' : selectedBrief.brief.status === 'rejected' ? '已放弃' : '待你审核'}</span></div>
@@ -122,8 +134,8 @@ export function TopicsPage() {
         {selectedBrief.brief.evidence?.imageInputMode === 'analysis' && <details className="brief-evidence"><summary>图片依据 <span>{selectedBrief.brief.evidence.images?.length ?? 0} 张分析摘要</span></summary><div className="brief-evidence-body"><p>本次使用已保存的视觉分析摘要，未重新读取原图。候选画面仍需你审核。</p><ul>{selectedBrief.brief.evidence.images?.map(image => <li key={image.id}>参考 {image.referenceId} · 第 {image.position ?? '?'} 张 · 素材 {image.id}：{image.description}（{image.tags.join('、')}）</li>)}</ul></div></details>}
         {briefError && <p className="research-error">{briefError}</p>}
         <div className="brief-actions"><span>参考笔记 {selectedBrief.referenceCount} 条 · {selectedBrief.brief.status === 'approved' ? '已进入素材筛选' : selectedBrief.brief.status === 'rejected' ? '已退回调研' : '通过后进入素材筛选'}</span><div className="button-row">
-          <button className="secondary-button" disabled={generatingBriefId !== null} onClick={() => void createBrief(selectedBrief.id)}><Zap size={15} />{generatingBriefId === selectedBrief.id ? '正在生成…' : selectedBrief.status === 'published' ? '基于此内容创建新策划' : '重新生成 Brief'}</button>
-          {selectedBrief.status !== 'published' && selectedBrief.brief.status === 'candidate' && <><button className="secondary-button" disabled={generatingBriefId !== null} onClick={() => void rejectBrief(selectedBrief.id)}><XCircle size={15} />放弃</button><button className="primary-button" disabled={generatingBriefId !== null} onClick={() => void approveBrief(selectedBrief.id)}><CheckCircle2 size={15} />通过 Brief</button></>}
+          <button className="secondary-button" disabled={briefBusy} onClick={() => void createBrief(selectedBrief.id)}><Zap size={15} />{briefBusy ? '正在生成…' : selectedBrief.status === 'published' ? '基于此内容创建新策划' : '重新生成 Brief'}</button>
+          {selectedBrief.status !== 'published' && selectedBrief.brief.status === 'candidate' && <><button className="secondary-button" disabled={briefBusy} onClick={() => void rejectBrief(selectedBrief.id)}><XCircle size={15} />放弃</button><button className="primary-button" disabled={briefBusy} onClick={() => void approveBrief(selectedBrief.id)}><CheckCircle2 size={15} />通过 Brief</button></>}
           {selectedBrief.brief.status === 'approved' && <button className="primary-button" onClick={() => navigate(`/assets?topic=${encodeURIComponent(selectedBrief.id)}`)}><FileImage size={15} />前往筛选素材</button>}
         </div></div>
       </section>}
