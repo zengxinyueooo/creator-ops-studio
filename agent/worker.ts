@@ -9,6 +9,8 @@ import { executeAdditionalWorkflow } from './additionalWorkflows.js'
 import { claimWithRecovery } from './queuePolling.js'
 import { saveExecutionReport } from './executionReport.js'
 import { finishOwnedRun, RunLease } from './runLease.js'
+import { classifyRunError } from './runErrors.js'
+import { retryTransientRead } from './retryPolicy.js'
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -117,8 +119,10 @@ async function executeResearchRun(db: SupabaseClient, run: AgentRun, lease: RunL
       if (!context) throw new Error('必须先调用 get_research_context')
       await addEvent(db, run, lease, 'tool_started', 'searching', `正在用 ${params.keywords.length} 个关键词读取首屏结果`, { keywords: params.keywords })
       const base = process.env.CREATOR_OPS_APP_URL ?? 'http://127.0.0.1:5173'
-      const response = await fetch(`${base}/api/opencli/xhs-search`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-creator-ops-bridge': '1' }, body: JSON.stringify(params), signal: AbortSignal.timeout(180_000) })
-      const body = await readSearchResponse(response) as { results: SearchResult[] }
+      const body = await retryTransientRead(async () => {
+        const response = await fetch(`${base}/api/opencli/xhs-search`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-creator-ops-bridge': '1' }, body: JSON.stringify(params), signal: AbortSignal.timeout(180_000) })
+        return readSearchResponse(response) as Promise<{ results: SearchResult[] }>
+      })
       const existing = new Set(((context.existingReferences as Array<{ source_note_id?: string; source_url?: string }>) ?? []).flatMap((item) => [item.source_note_id, item.source_url].filter(Boolean) as string[]))
       searched = (body.results ?? []).filter((item) => !existing.has(item.noteId) && !existing.has(item.url)).slice(0, params.limit).map((item, index) => ({ ...item, rank: index + 1 }))
       searchCompleted = true
@@ -189,12 +193,12 @@ async function main() {
       await addEvent(db, run, lease, 'run_completed', 'completed', completedMessage)
       await finishOwnedRun(db, { runId: run.id, workerId, status: 'succeeded', piSessionId })
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : String(caught)
-      await addEvent(db, run, lease, 'run_failed', 'failed', message).catch(console.error)
-      await finishOwnedRun(db, { runId: run.id, workerId, status: 'failed', errorMessage: message, piSessionId }).catch((finishError) => {
+      const failure = classifyRunError(caught)
+      await addEvent(db, run, lease, 'run_failed', 'failed', failure.message, { category: failure.category, retryable: failure.retryable }).catch(console.error)
+      await finishOwnedRun(db, { runId: run.id, workerId, status: 'failed', errorMessage: failure.message, piSessionId }).catch((finishError) => {
         console.error(`[agent-worker] run ${run.id} 失败状态未写入:`, finishError)
       })
-      console.error(`[agent-worker] run ${run.id} failed:`, message)
+      console.error(`[agent-worker] run ${run.id} failed [${failure.category}]:`, failure.original)
     } finally {
       lease.stop()
       await saveExecutionReport(db, run.id).catch(() => console.warn(`[agent-worker] run ${run.id} 报告未保存，可重新生成；业务状态不变`))

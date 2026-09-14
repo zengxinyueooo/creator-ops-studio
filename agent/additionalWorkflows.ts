@@ -6,6 +6,7 @@ import { createAgentSession, DefaultResourceLoader, defineTool, getAgentDir, Mod
 import { runFailure } from './runOutcome.js'
 import { errorText, missingPositions, RecoveryGate } from './captureRecovery.js'
 import { redactReport } from '../src/lib/executionReport.js'
+import { retryTransientRead } from './retryPolicy.js'
 
 export type WorkflowRun = { id: string; user_id: string; account_id: string; run_type: string; target_type: string; target_id: string; input: Record<string, unknown> }
 type EventWriter = (run: WorkflowRun, eventType: string, step: string, message: string, payload?: Record<string, unknown>) => Promise<void>
@@ -73,10 +74,15 @@ async function runSession(root: string, run: WorkflowRun, skillNames: string[], 
 }
 
 async function jsonPost(path: string, body: unknown) {
-  const response = await fetch(`${appUrl()}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-creator-ops-bridge': '1' }, body: JSON.stringify(body), signal: AbortSignal.timeout(path.endsWith('xhs-note-capture') ? 420_000 : 180_000) })
-  const payload = await response.json().catch(() => null) as Record<string, unknown> | null
-  if (!response.ok || !payload) throw new Error(text(payload?.error) || `本地服务请求失败（${response.status}）`)
-  return payload
+  const request = async () => {
+    const response = await fetch(`${appUrl()}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-creator-ops-bridge': '1' }, body: JSON.stringify(body), signal: AbortSignal.timeout(path.endsWith('xhs-note-capture') ? 420_000 : 180_000) })
+    const payload = await response.json().catch(() => null) as Record<string, unknown> | null
+    if (!response.ok || !payload) throw new Error(text(payload?.error) || `本地服务请求失败（${response.status}）`)
+    return payload
+  }
+  // Capture can leave a browser child process running after a client timeout;
+  // only replay the read-only profile lookup automatically.
+  return path.endsWith('xhs-note-capture') ? request() : retryTransientRead(request)
 }
 
 async function profileWorkflow(root: string, db: SupabaseClient, run: WorkflowRun, event: EventWriter) {
@@ -95,7 +101,7 @@ async function profileWorkflow(root: string, db: SupabaseClient, run: WorkflowRu
     const profile = { officialSynopsis: text(official.officialSynopsis, 5000), officialSourceUrl: text(official.officialSourceUrl, 1000), setting: text(params.setting, 300), mainCharacters: strings(params.mainCharacters, 8, 60), relationshipSummary: text(params.relationshipSummary, 500), coreConflicts: strings(params.coreConflicts, 6, 120), contentThemes: strings(params.contentThemes, 6, 40), toneTags: strings(params.toneTags, 6, 24), spoilerBoundary: text(params.spoilerBoundary, 300), updatedAt: new Date().toISOString() }
     const cover = official.cover as { downloadUrl: string; filename: string; mimeType: string } | undefined
     let coverPath: string | undefined
-    if (cover) { const response = await fetch(`${appUrl()}${cover.downloadUrl}`, { headers: { 'x-creator-ops-bridge': '1' } }); if (!response.ok) throw new Error('读取官方封面失败'); const bytes = await response.arrayBuffer(); coverPath = `${run.user_id}/${run.account_id}/comic-covers/${crypto.randomUUID()}-${cover.filename.replace(/[^a-zA-Z0-9._-]/g, '-')}`; const upload = await db.storage.from('content-assets').upload(coverPath, bytes, { contentType: cover.mimeType, upsert: false }); if (upload.error) throw upload.error }
+    if (cover) { const bytes = await retryTransientRead(async () => { const response = await fetch(`${appUrl()}${cover.downloadUrl}`, { headers: { 'x-creator-ops-bridge': '1' }, signal: AbortSignal.timeout(60_000) }); if (!response.ok) throw new Error(`读取官方封面失败 HTTP ${response.status}`); return response.arrayBuffer() }); coverPath = `${run.user_id}/${run.account_id}/comic-covers/${crypto.randomUUID()}-${cover.filename.replace(/[^a-zA-Z0-9._-]/g, '-')}`; const upload = await db.storage.from('content-assets').upload(coverPath, bytes, { contentType: cover.mimeType, upsert: false }); if (upload.error) throw upload.error }
     const update = await db.from('comics').update({ custom_fields: { ...(comic.custom_fields ?? {}), content_profile: profile, ...(coverPath ? { cover_storage_path: coverPath } : {}) } }).eq('id', run.target_id).eq('user_id', run.user_id).eq('account_id', run.account_id)
     if (update.error) { if (coverPath) await db.storage.from('content-assets').remove([coverPath]); throw update.error }
     await saveRunOutput(db, run.id, { comicId: run.target_id, officialSourceUrl: profile.officialSourceUrl, titleWarning: official.titleWarning ?? '' })
