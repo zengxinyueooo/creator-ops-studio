@@ -8,6 +8,7 @@ import { readSearchResponse, runFailure } from './runOutcome.js'
 import { executeAdditionalWorkflow } from './additionalWorkflows.js'
 import { claimWithRecovery } from './queuePolling.js'
 import { saveExecutionReport } from './executionReport.js'
+import { finishOwnedRun, RunLease } from './runLease.js'
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -59,13 +60,13 @@ function required(name: string, fallbackName?: string) {
   return value
 }
 
-async function addEvent(db: SupabaseClient, run: AgentRun, eventType: string, step: string, message: string, payload: Json = {}) {
+async function addEvent(db: SupabaseClient, run: AgentRun, lease: RunLease, eventType: string, step: string, message: string, payload: Json = {}) {
+  await lease.renew(step)
   const { error } = await db.from('agent_run_events').insert({ run_id: run.id, user_id: run.user_id, event_type: eventType, step, message, payload })
   if (error) throw error
-  await db.from('agent_runs').update({ current_step: step, updated_at: new Date().toISOString(), lease_expires_at: new Date(Date.now() + 10 * 60_000).toISOString() }).eq('id', run.id).eq('status', 'running')
 }
 
-async function executeResearchRun(db: SupabaseClient, run: AgentRun) {
+async function executeResearchRun(db: SupabaseClient, run: AgentRun, lease: RunLease) {
   if (!run.research_task_id) throw new Error('调研执行缺少 research_task_id')
   const skillPath = resolve(root, 'skills/xiaohongshu-comic-reference-discovery/SKILL.md')
   const runtimePath = resolve(root, 'agent/RUNTIME.md')
@@ -105,7 +106,7 @@ async function executeResearchRun(db: SupabaseClient, run: AgentRun) {
       if (comicError) throw comicError
       if (existingError) throw existingError
       context = { task: { id: task.id, keywords: task.keywords, purpose: task.purpose, limit: task.result_limit, filters: task.filter_config }, comic: { id: comic.id, title: comic.title, status: comic.status, serializationStatus: comic.custom_fields?.serialization_status ?? 'unknown' }, existingReferences: existing ?? [] }
-      await addEvent(db, run, 'step_completed', 'context_loaded', `已读取《${comic.title}》调研上下文`)
+      await addEvent(db, run, lease, 'step_completed', 'context_loaded', `已读取《${comic.title}》调研上下文`)
       return { content: [{ type: 'text' as const, text: JSON.stringify(context) }], details: {} }
     },
   })
@@ -114,14 +115,14 @@ async function executeResearchRun(db: SupabaseClient, run: AgentRun) {
     parameters: Type.Object({ keywords: Type.Array(Type.String(), { minItems: 2, maxItems: 3 }), requiredComicTitle: Type.String(), limit: Type.Integer({ minimum: 1, maximum: 10 }), publishedWithin: Type.Union([Type.Literal('all'), Type.Literal('week')]) }),
     execute: async (_id, params) => {
       if (!context) throw new Error('必须先调用 get_research_context')
-      await addEvent(db, run, 'tool_started', 'searching', `正在用 ${params.keywords.length} 个关键词读取首屏结果`, { keywords: params.keywords })
+      await addEvent(db, run, lease, 'tool_started', 'searching', `正在用 ${params.keywords.length} 个关键词读取首屏结果`, { keywords: params.keywords })
       const base = process.env.CREATOR_OPS_APP_URL ?? 'http://127.0.0.1:5173'
       const response = await fetch(`${base}/api/opencli/xhs-search`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-creator-ops-bridge': '1' }, body: JSON.stringify(params), signal: AbortSignal.timeout(180_000) })
       const body = await readSearchResponse(response) as { results: SearchResult[] }
       const existing = new Set(((context.existingReferences as Array<{ source_note_id?: string; source_url?: string }>) ?? []).flatMap((item) => [item.source_note_id, item.source_url].filter(Boolean) as string[]))
       searched = (body.results ?? []).filter((item) => !existing.has(item.noteId) && !existing.has(item.url)).slice(0, params.limit).map((item, index) => ({ ...item, rank: index + 1 }))
       searchCompleted = true
-      await addEvent(db, run, 'tool_completed', 'search_complete', `搜索完成，去重后得到 ${searched.length} 条候选`)
+      await addEvent(db, run, lease, 'tool_completed', 'search_complete', `搜索完成，去重后得到 ${searched.length} 条候选`)
       return { content: [{ type: 'text' as const, text: JSON.stringify({ results: searched }) }], details: {} }
     },
   })
@@ -139,7 +140,7 @@ async function executeResearchRun(db: SupabaseClient, run: AgentRun) {
       const { error: outputError } = await db.from('agent_runs').update({ output: { results, summary: params.summary } }).eq('id', run.id)
       if (outputError) throw outputError
       saved = true
-      await addEvent(db, run, 'tool_completed', 'results_staged', `已保存 ${results.length} 条候选，等待人工勾选导入`)
+      await addEvent(db, run, lease, 'tool_completed', 'results_staged', `已保存 ${results.length} 条候选，等待人工勾选导入`)
       return { content: [{ type: 'text' as const, text: JSON.stringify({ saved: results.length, humanGate: 'required' }) }], details: {} }
     },
   })
@@ -150,9 +151,8 @@ async function executeResearchRun(db: SupabaseClient, run: AgentRun) {
   const model = modelRuntime.getModel(provider, idParts.join('/'))
   if (!model) throw new Error(`Pi 模型不可用：${modelRef}`)
   const { session } = await createAgentSession({ cwd: root, modelRuntime, model, thinkingLevel: 'medium', tools: ['get_research_context', 'search_xiaohongshu', 'save_research_candidates'], customTools: [getContext, search, save], resourceLoader: loader, sessionManager: SessionManager.inMemory(root) })
-  await db.from('agent_runs').update({ pi_session_id: session.sessionId }).eq('id', run.id)
   session.subscribe((event) => {
-    if (event.type === 'tool_execution_start') void addEvent(db, run, 'pi_tool_started', 'agent_working', `Pi 调用 ${event.toolName}`).catch(console.error)
+    if (event.type === 'tool_execution_start') void addEvent(db, run, lease, 'pi_tool_started', 'agent_working', `Pi 调用 ${event.toolName}`).catch(console.error)
   })
   try {
     await session.prompt('/skill:xiaohongshu-comic-reference-discovery 执行当前绑定的调研任务。必须依次读取上下文、搜索并保存候选；不要请求用户输入。')
@@ -174,23 +174,29 @@ async function main() {
     })
     const run = (data?.[0] ?? null) as AgentRun | null
     if (!run) { if (!once) await new Promise((resolveDelay) => setTimeout(resolveDelay, pollMs)); continue }
+    const lease = new RunLease(db, run.id, workerId)
+    lease.start()
+    let piSessionId: string | undefined
     try {
-      await addEvent(db, run, 'run_started', 'starting', '本机 Worker 已领取任务，正在启动 Pi')
-      const piSessionId = run.run_type === 'research_discovery'
-        ? await executeResearchRun(db, run)
-        : await executeAdditionalWorkflow(root, db, run as Parameters<typeof executeAdditionalWorkflow>[2], (eventRun, eventType, step, message, payload) => addEvent(db, eventRun as AgentRun, eventType, step, message, payload))
-      if (piSessionId) await db.from('agent_runs').update({ pi_session_id: piSessionId }).eq('id', run.id)
-      await db.from('agent_runs').update({ status: 'succeeded', current_step: 'completed', completed_at: new Date().toISOString(), lease_expires_at: null, updated_at: new Date().toISOString() }).eq('id', run.id)
+      await addEvent(db, run, lease, 'run_started', 'starting', '本机 Worker 已领取任务，正在启动 Pi')
+      piSessionId = run.run_type === 'research_discovery'
+        ? await executeResearchRun(db, run, lease)
+        : await executeAdditionalWorkflow(root, db, run as Parameters<typeof executeAdditionalWorkflow>[2], (eventRun, eventType, step, message, payload) => addEvent(db, eventRun as AgentRun, lease, eventType, step, message, payload))
+      lease.assertOwned()
       const completedMessage = run.run_type === 'research_discovery'
         ? '调研完成，候选结果等待人工审核'
         : 'Agent 工作流完成，结果等待人工审核'
-      await addEvent(db, run, 'run_completed', 'completed', completedMessage)
+      await addEvent(db, run, lease, 'run_completed', 'completed', completedMessage)
+      await finishOwnedRun(db, { runId: run.id, workerId, status: 'succeeded', piSessionId })
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught)
-      await db.from('agent_runs').update({ status: 'failed', current_step: 'failed', error_message: message, completed_at: new Date().toISOString(), lease_expires_at: null, updated_at: new Date().toISOString() }).eq('id', run.id)
-      await addEvent(db, run, 'run_failed', 'failed', message).catch(console.error)
+      await addEvent(db, run, lease, 'run_failed', 'failed', message).catch(console.error)
+      await finishOwnedRun(db, { runId: run.id, workerId, status: 'failed', errorMessage: message, piSessionId }).catch((finishError) => {
+        console.error(`[agent-worker] run ${run.id} 失败状态未写入:`, finishError)
+      })
       console.error(`[agent-worker] run ${run.id} failed:`, message)
     } finally {
+      lease.stop()
       await saveExecutionReport(db, run.id).catch(() => console.warn(`[agent-worker] run ${run.id} 报告未保存，可重新生成；业务状态不变`))
     }
   } while (!once)
