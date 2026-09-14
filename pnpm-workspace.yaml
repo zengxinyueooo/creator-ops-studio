@@ -1,2 +1,5 @@
 allowBuilds:
+  '@google/genai': true
   '@jackwener/opencli': true
+  esbuild: true
+  protobufjs: true

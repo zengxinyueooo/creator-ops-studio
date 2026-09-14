@@ -1,84 +1,86 @@
 ---
 name: xiaohongshu-comic-asset-ingestion
-description: Analyze and store all valid images from one user-selected, already captured Xiaohongshu note in this repository's Supabase-backed manga asset library with source traceability. Use only after the user has kept a note and explicitly started capture. Do not use for broad topic research, topic creation, Brief generation, or publishing.
+description: 将一篇用户选定、已采集的小红书笔记中的全部有效图片分析并存入本仓库基于 Supabase 的漫画素材库，保留来源追溯。仅在用户保留笔记并明确启动采集后使用；不用于广泛选题调研、选题创建、Brief 生成或发布。
 ---
 
-# Xiaohongshu Comic Asset Ingestion
+# 小红书漫画素材入库
 
-Turn one reviewed Xiaohongshu note into reusable, traceable reference assets for the active manga account. The result is an asset-library record, not a publication-ready claim of ownership.
+将一篇已审核的小红书笔记转为当前漫画账号下可复用、可追溯的参考素材。结果是素材库记录，不代表已获得可直接发布的所有权。
 
-## Required scope
+## 必要范围
 
-This is the storage part of `xiaohongshu-comic-note-capture`. Run it only after the user clicks to capture one kept note, its detail metadata has been collected, and its target comic is known.
+这是 `xiaohongshu-comic-note-capture` 的存储部分。只有用户点击采集一篇已保留笔记、详情元数据已获取且目标漫画已知时才能运行。
 
-Confirm only these inputs:
+只确认这些输入：
 
-- A user-selected Xiaohongshu note URL or short link, and its target comic.
-- The active account and the matching comic record in the workspace.
-- Whether the user wants every image retained. Default: retain every valid image from the selected note.
+- 用户选定的小红书笔记 URL 或短链接，以及目标漫画。
+- 当前账号与工作台中匹配的漫画记录。
+- 用户是否要保留全部图片；默认保留所选笔记的全部有效图片。
 
-Do not expand to a creator profile, a search-result batch, or another note unless the user explicitly asks. Do not create a Topic/Brief or publish content as part of ingestion.
+用户没有明确要求时，不扩展到作者主页、搜索结果批次或另一篇笔记。入库过程中不创建选题、Brief 或发布内容。
 
-## Collect the note safely
+## 采集笔记
 
-Use the OpenCLI Xiaohongshu adapter, not hand-written requests to Xiaohongshu. Load `opencli-usage` before starting an OpenCLI session and use the capture record's media list with the adapter's `download` command.
+使用 OpenCLI 小红书适配器，不手写针对小红书的请求。开始 OpenCLI 会话前加载 `opencli-usage`，使用采集记录的媒体列表和适配器 `download` 命令。
 
-- Check `opencli doctor` first.
-- Use the captured note ID and media list; do not retrieve note details again.
-- Download its media once to a local ignored temporary directory such as `.tmp/asset-ingestion/<note-id>/`.
-- Keep the note ID, title, author, original source URL, topic hashtags, and downloaded image order. A signed URL may expire, so the note ID is the durable deduplication key.
-- Keep activity read-only: do not like, save, follow, comment, publish, or repeatedly reload the note.
+- 先检查 `opencli doctor`。
+- 使用已采集笔记 ID 与媒体列表，不重复获取详情。
+- 媒体只下载一次，保存到本地被版本管理忽略的临时目录，例如 `.tmp/asset-ingestion/<note-id>/`。
+- 保留笔记 ID、标题、作者、原始来源 URL、话题标签和下载图片顺序。签名 URL 可能过期，笔记 ID 才是稳定去重键。
+- 保持只读，不点赞、收藏、关注、评论、发布或反复加载笔记。
 
-## Analyze, then store
+## 先分析，再存储
 
-Inspect only enough to reject corrupt or non-image files. Send every valid image once to the configured visual model before writing the asset record; then store its original bytes without resizing or recompressing them.
+文件检查只需足以排除损坏或非图片文件。每张有效图片在写入素材记录前，向已配置视觉模型发送一次；之后保存原始字节，不缩放或重新压缩。
 
-The default visual model is an explicit part of capture, not a separate manual-review queue. It must return structured metadata for each image. A continuous vertical comic image remains `single` even if it contains several comic panels; use `collage` only when the uploaded image visibly combines two or more independent images with a joining boundary.
+默认视觉模型是采集的一部分，不是独立的人工审核队列。它必须为每张图片返回结构化元数据。连续竖版漫画即使含多个分镜，仍归为 `single`；只有图片明显将两张或更多独立图片拼接，且有拼接边界时才使用 `collage`。
 
-- `visual_format`: `single`, `collage`, `uncertain`, or `invalid`.
-- `review_status`: `available` for `single` or `collage`; `rejected` for `invalid`; `pending` only when the model explicitly returns `uncertain`.
-- `classification_note`: one concise visual description.
-- `content_type`: `cover`, `character`, `interaction`, `plot`, `dialogue`, `atmosphere`, or `other`.
-- two to five deduplicated semantic tags and a bounded confidence value.
-- `characters`: only names visibly written in the image or supplied as unambiguous comic context; otherwise leave empty. Never create a “角色待确认” asset tag.
+- `visual_format`：`single`、`collage`、`uncertain` 或 `invalid`。
+- `review_status`：`single` 或 `collage` 对应 `available`；`invalid` 对应 `rejected`；仅模型明确返回 `uncertain` 时使用 `pending`。
+- `classification_note`：一句简洁画面描述。
+- `content_type`：`cover`、`character`、`interaction`、`plot`、`dialogue`、`atmosphere` 或 `other`。
+- 2–5 个去重语义标签，以及取值在规定范围内的置信度。
+- `characters`：只写画面中明确出现的姓名或漫画上下文明确提供的人物，否则留空。不得创建“角色待确认”素材标签。
 
-If visual analysis is not configured or fails, stop before asset creation and report the configuration/error. Do not silently create an unlabeled `pending` asset. Existing legacy pending assets can be reanalyzed in one explicit maintenance action.
+未配置视觉分析或发生不可恢复错误时，在创建该素材前停止并报告原因。Worker 返回明确可重试的临时错误时，先检查已保存位置，再在最多三次尝试内处理该位置；不得悄悄创建无标签的 `pending` 素材。已完成素材保留，不因后续失败删除。既有历史待审核素材可以通过一次明确的维护操作重新分析。
 
-The model’s result is the initial workflow status. The user may later use the compact “校正分析” action for an exceptional result, but the standard card should show the actual analysis labels rather than a mandatory “确认单图” action. Both a valid single image and a valid collage may be linked to a Brief; only `invalid` material is blocked.
+模型结果是初始工作流状态。用户之后可通过简洁的“校正分析”操作处理异常结果，但标准卡片应显示实际分析标签，不应要求每张图片都点击“确认单图”。有效单图和拼图都可关联 Brief；仅 `invalid` 素材被阻止使用。
 
-## Write to the asset library
+## 写入素材库
 
-Upload the image bytes to the private `content-assets` Supabase Storage bucket. Save only the object path in the `assets` table; use a signed URL at read time for previews.
+上传图片字节到 Supabase Storage 私有 `content-assets` bucket。`assets` 表只保存对象路径，读取预览时使用签名 URL。
 
-Every stored asset must include:
+每条素材必须包含：
 
-- Account ID, comic ID, original filename, MIME type, byte size, storage path.
-- `source_type: xiaohongshu`, original source URL, and stable `sourceNoteId` in `custom_fields` when the importer supports it.
-- `copyrightStatus: reference_only` in `custom_fields` unless the user supplies stronger rights information.
-- Work name, a note-title-derived chapter/segment label, source-note image order, and any confirmed semantic content tags.
+- 账号 ID、漫画 ID、原始文件名、MIME 类型、字节数和存储路径。
+- `source_type: xiaohongshu`、原始来源 URL；导入器支持时，在 `custom_fields` 中保存稳定的 `sourceNoteId`。
+- 用户没有提供更充分权利信息时，在 `custom_fields` 中保存 `copyrightStatus: reference_only`。
+- 作品名、根据笔记标题得到的章节或片段标签、来源笔记图片顺序，以及已确认的语义内容标签。
 
-Use two to five semantic tags per image, with at most one from each group when possible:
+每张图片使用 2–5 个语义标签，尽量每组不超过一个：
 
-- Emotion: `甜`, `暧昧`, `心动`, `治愈`, `轻松`, `紧张`, `虐心`, `悬念`, `反差萌`.
-- Relationship or story beat: `对视`, `承诺`, `守护`, `吃醋`, `信任危机`, `关系推进`, `设定揭秘`.
-- Visual expression: `双人同框`, `双人对话`, `人物特写`, `亲密距离`, `萌宠`.
+- 情绪：`甜`、`暧昧`、`心动`、`治愈`、`轻松`、`紧张`、`虐心`、`悬念`、`反差萌`。
+- 关系或剧情节点：`对视`、`承诺`、`守护`、`吃醋`、`信任危机`、`关系推进`、`设定揭秘`。
+- 画面表达：`双人同框`、`双人对话`、`人物特写`、`亲密距离`、`萌宠`。
 
-Use only what the image or its visible dialogue supports. Treat note hashtags as candidate evidence: deduplicate them, retain them in `custom_fields.sourceNoteTags` for traceability, and promote one to a visible content tag only when it describes the actual image. `单图`/`拼图` belong in `visual_format`; characters, content type, chapter labels, and source terms such as `新特典` have their own fields. Never use placeholder tags such as `测试`.
+只使用图片或可见台词支持的标签。笔记话题标签视为候选证据：去重后保留在 `custom_fields.sourceNoteTags` 以供追溯，只有确实描述当前图片时才能转为可见内容标签。`单图`、`拼图` 属于 `visual_format`；人物、内容类型、章节标签及“新特典”等来源词各有专用字段。不得使用“测试”等占位标签。
 
-Deduplicate within the active account by stable note ID plus image index/original filename before upload. Preserve an existing asset rather than creating another copy. Never auto-link assets to a Brief; that remains a user review action.
+上传前，在当前账号内按稳定笔记 ID 加图片序号或原始文件名去重。已有素材应保留，不创建副本。不得自动将素材关联到 Brief，这仍是用户审核操作。
 
-## Verify the result
+## 验证结果
 
-After upload:
+Worker 中遵循笔记采集 Skill 的四工具恢复协议。`inspect_capture_state` 用于观察，`process_capture_image` 处理指定位置，`finalize_note_capture` 核验全部位置与最终入库。普通进度警告与业务写入错误分开；不可根据一张图成功推断整篇完成。已保存图片在视觉模型调用之前跳过，当前会话中已成功的分析结果复用。不要擅自删除写入结果不确定时的对象。
 
-1. Confirm the number of stored assets equals the valid downloaded-image count, accounting for deduplicated items.
-2. Reload the asset page and ensure each asset has a working signed preview.
-3. Confirm each preview opens the full original image.
-4. Report the total, model-available asset count, single/collage distribution, uncertain count, and any skipped files.
+上传后：
 
-## Boundaries
+1. 确认存储素材数量与有效下载图片数量一致，计入去重项。
+2. 重新加载素材页，确认每条素材的签名预览有效。
+3. 确认每个预览都能打开完整原图。
+4. 报告总数、模型判定可用数量、单图与拼图分布、不确定数量及跳过的文件。
 
-- Source images are references only. Do not present them as original work, and do not bypass the user's manual publishing review.
-- Do not store an image if it is corrupted, non-image media, or outside the selected note's media list; explain the omission.
-- Do not expose Supabase access tokens, long-lived storage credentials, or the user's Xiaohongshu credentials.
-- Improve this skill only from repeated workflow evidence. Keep it limited to single-note manga asset storage.
+## 边界
+
+- 来源图片仅作参考，不得宣称原创，也不得绕过用户手动发布审核。
+- 文件损坏、非图片媒体或不在所选笔记媒体列表中时，不存储并说明原因。
+- 不泄露 Supabase 访问令牌、长期存储凭证或用户小红书凭证。
+- 只根据反复出现的工作流证据改进本 Skill，保持范围为单篇笔记的漫画素材存储。

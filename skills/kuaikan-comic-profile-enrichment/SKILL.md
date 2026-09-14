@@ -1,44 +1,44 @@
 ---
 name: kuaikan-comic-profile-enrichment
-description: Verify and enrich the official profile and cover of a Kuaikan comic after the user has kept it. Use for selected-library profile completion or re-verification; do not use for candidate discovery, selection, topic research, or publishing.
+description: 在用户保留快看漫画后，核验并补全其官方档案和封面。用于已保留漫画库的档案补全或重新核验；不用于候选发现、漫画选择、选题调研或发布。
 ---
 
-# Kuaikan Comic Profile Enrichment
+# 快看漫画官方档案补全
 
-Complete one already-kept comic record from its official Kuaikan title page. Keep candidate discovery and human selection outside this workflow.
+根据快看官方作品页补全一部已保留漫画的记录。候选发现和人工选择不属于本工作流。
 
-## Entry and Authorization
+## 入口与授权
 
-Only process comics whose status is `selected`, `following`, `paused`, or `completed`. A click on the comic card's “自动补全官方档案” or “重新核验官方档案” button authorizes fetching and saving that comic only. An explicit user request to enrich a named kept comic is equivalent authorization.
+只处理状态为 `selected`、`following`、`paused` 或 `completed` 的漫画。点击漫画卡片上的“自动补全官方档案”或“重新核验官方档案”，只授权获取和保存该漫画。用户明确要求补全某部已保留漫画时，视为同等授权。
 
-Do not process `candidate` records or change a comic's review status. Do not expand a single-comic action into a batch unless the user explicitly requests the batch.
+不得处理 `candidate` 记录或改变漫画审核状态。用户没有明确要求批量处理时，不得把单部漫画操作扩展为批量。
 
-## Official Source Resolution
+## 确定官方来源
 
-Prefer an existing `officialSourceUrl` that is an HTTPS `www.kuaikanmanhua.com/web/topic/<id>` page. Otherwise search `https://www.kuaikanmanhua.com/sou/<作品名>` and select a direct official topic page only after verifying its title.
+优先使用已有的 `officialSourceUrl`，要求它是 HTTPS 的 `www.kuaikanmanhua.com/web/topic/<id>` 页面。否则搜索 `https://www.kuaikanmanhua.com/sou/<作品名>`，核验标题后才能选择直接官方作品页。
 
-Allow a minor title variant only when the match is unambiguous. Preserve the library title and surface the canonical Kuaikan title as a warning; never silently rename the record. Stop when the official title is materially different or no reliable topic page is found.
+只有匹配毫无歧义时才允许轻微标题差异。保留库内标题，将快看规范标题作为警告展示，不得悄悄重命名。官方标题明显不一致或找不到可靠作品页时停止。
 
-## Evidence Boundary
+## 证据边界
 
-Treat only the official topic page's title, author, tags, description, and official cover as source facts. Do not use Xiaohongshu, comments, encyclopedias, search snippets, or model memory to fill plot details.
+只有官方作品页的标题、作者、标签、简介和官方封面可作为来源事实。不得用小红书、评论、百科、搜索摘要或模型记忆补充剧情细节。
 
-The text model may conservatively organize the official description into these fields:
+文本模型可以保守地将官方简介整理为以下字段：
 
-- `officialSynopsis`
-- `officialSourceUrl`
-- `setting`
-- `mainCharacters`
-- `relationshipSummary`
-- `coreConflicts`
-- `contentThemes`
-- `toneTags`
-- `spoilerBoundary`
+- `officialSynopsis`：官方简介。
+- `officialSourceUrl`：官方来源 URL。
+- `setting`：故事设定。
+- `mainCharacters`：主要人物。
+- `relationshipSummary`：人物关系。
+- `coreConflicts`：核心冲突。
+- `contentThemes`：内容主题。
+- `toneTags`：基调标签。
+- `spoilerBoundary`：剧透边界。
 
-Keep `officialSynopsis` verbatim except for removing the page's title prefix and trailing update/editorial boilerplate. Derived fields must not add names, identities, relationships, events, reversals, or endings absent from that synopsis. Mark missing information as not stated by the official synopsis.
+`officialSynopsis` 保持原文，只允许移除页面标题前缀和末尾更新、编辑套话。派生字段不得新增简介中没有的人名、身份、关系、事件、反转或结局。缺失信息标明“官方简介未说明”。
 
-## Save Result
+## 保存结果
 
-Fetch the official landscape cover, validate that it is an image no larger than the application's cover limit, and save it through the existing private Storage path together with the structured profile. Use the repository's normal profile save operation so account and comic ownership checks remain enforced.
+获取官方横版封面，校验文件确为图片且未超过应用封面大小限制，通过既有私有 Storage 路径保存，并保存结构化档案。使用仓库常规档案保存操作，以保留账号与漫画归属校验。
 
-On success, report the official URL and any title-variant warning. On failure, save nothing and return an actionable error. Do not publish, generate content, or modify other comics as part of this workflow.
+成功时报告官方 URL 和标题差异警告。失败时不保存任何内容，返回可处理的错误。本工作流不得发布、生成内容或修改其他漫画。

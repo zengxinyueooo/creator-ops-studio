@@ -5,9 +5,17 @@ import { TopicCard } from '../components/TopicCard'
 import { PillSelect } from '../components/PillSelect'
 import { statusMeta } from '../data/status'
 import { useWorkspace } from '../store/WorkspaceContext'
+import { runAgentWorkflow } from '../lib/agentWorkflow'
+import { dataMode } from '../lib/supabase'
 import type { TopicStatus } from '../types'
 
-const columns: TopicStatus[] = ['idea', 'research', 'materials', 'draft', 'review', 'approved']
+const columns: TopicStatus[] = ['idea', 'research', 'materials', 'draft', 'review', 'approved', 'published']
+
+function evidenceTime(value?: string) {
+  if (!value) return '未知'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '未知' : date.toLocaleString('zh-CN', { hour12: false })
+}
 
 export function TopicsPage() {
   const { activeAccount, accountTopics, state, updateTopicStatus, addTopic, generateTopicBrief, setTopicBriefStatus } = useWorkspace()
@@ -20,6 +28,7 @@ export function TopicsPage() {
   const [comicId, setComicId] = useState(() => comics.find((comic) => comic.status === 'following' || comic.status === 'selected')?.id ?? comics[0]?.id ?? '')
   const [selectedBriefId, setSelectedBriefId] = useState(() => accountTopics.find((topic) => topic.brief)?.id ?? '')
   const [briefError, setBriefError] = useState('')
+  const [generatingBriefId, setGeneratingBriefId] = useState<string | null>(null)
   const selectedBrief = accountTopics.find((topic) => topic.id === selectedBriefId && topic.brief) ?? accountTopics.find((topic) => topic.brief)
 
   function submit(event: React.FormEvent) {
@@ -30,12 +39,24 @@ export function TopicsPage() {
   }
 
   async function createBrief(topicId: string) {
+    if (generatingBriefId) return
+    setGeneratingBriefId(topicId)
     setBriefError('')
     try {
-      await generateTopicBrief(topicId)
-      setSelectedBriefId(topicId)
+      if (dataMode === 'supabase') {
+        const topic = accountTopics.find((item) => item.id === topicId)
+        if (!topic) throw new Error('选题不存在')
+        const run = await runAgentWorkflow({ runType: 'brief_generation', targetType: 'topic', targetId: topicId, accountId: topic.accountId }, (value) => setBriefError(value.events.at(-1)?.message ?? 'Pi 正在生成 Brief'))
+        setSelectedBriefId(String(run.output.topicId ?? topicId))
+        window.location.reload()
+        return
+      }
+      const resultId = await generateTopicBrief(topicId)
+      setSelectedBriefId(resultId)
     } catch (caught) {
       setBriefError(caught instanceof Error ? caught.message : 'Brief 生成失败')
+    } finally {
+      setGeneratingBriefId(null)
     }
   }
 
@@ -85,12 +106,25 @@ export function TopicsPage() {
             <ul className="avoid-list">{selectedBrief.brief.avoidances.map((item) => <li key={item}><XCircle size={13} />{item}</li>)}</ul>
           </div>
         </div>
-        {selectedBrief.brief.evidence && <details><summary>查看生成证据（{selectedBrief.brief.evidence.referenceIds.length} 条参考）</summary><p>生成时间：{selectedBrief.brief.evidence.generatedAt} · 档案更新时间：{selectedBrief.brief.evidence.profile.updatedAt || '未知'}</p><p>官方简介：{selectedBrief.brief.evidence.profile.officialSynopsis || '未知'}</p><p>官方来源：{selectedBrief.brief.evidence.profile.officialSourceUrl || '未知'}</p><p>剧透边界：{selectedBrief.brief.evidence.profile.spoilerBoundary || '未知'}</p><p>参考 ID：{selectedBrief.brief.evidence.referenceIds.join('、')}</p></details>}
+        {selectedBrief.brief.evidence && <details className="brief-evidence"><summary>查看生成证据 <span>{selectedBrief.brief.evidence.referenceIds.length} 条参考</span></summary><div className="brief-evidence-body"><div className="brief-evidence-meta"><span>生成于 {evidenceTime(selectedBrief.brief.evidence.generatedAt)}</span><span>档案更新于 {evidenceTime(selectedBrief.brief.evidence.profile.updatedAt)}</span></div><dl><dt>官方简介</dt><dd>{selectedBrief.brief.evidence.profile.officialSynopsis || '未知'}</dd><dt>官方来源</dt><dd>{/^https?:\/\//i.test(selectedBrief.brief.evidence.profile.officialSourceUrl || '') ? <a href={selectedBrief.brief.evidence.profile.officialSourceUrl} target="_blank" rel="noreferrer">查看漫画官方页面 ↗</a> : '未知'}</dd><dt>剧透边界</dt><dd>{selectedBrief.brief.evidence.profile.spoilerBoundary || '未知'}</dd><dt>关联参考</dt><dd><ul>{selectedBrief.brief.evidence.referenceIds.map(id => {
+          const reference = state.references.find(item => item.id === id)
+          return <li key={id}>{reference && /^https?:\/\//i.test(reference.sourceUrl) ? <a href={reference.sourceUrl} target="_blank" rel="noreferrer">{reference.title} ↗</a> : '历史参考笔记（当前不可用）'}</li>
+        })}</ul></dd></dl></div></details>}
+        <div className="brief-grid">
+          {selectedBrief.brief.audience && <div className="brief-zone tint-violet"><h3>目标读者与阅读收益</h3><p>{selectedBrief.brief.audience}</p></div>}
+          {selectedBrief.brief.coverPlan && <div className="brief-zone tint-blue"><h3>封面方案</h3><p>{selectedBrief.brief.coverPlan}</p></div>}
+          {([
+            ['参考启发与出处', selectedBrief.brief.referenceInsights],
+            ['逐图内容与素材安排', selectedBrief.brief.pagePlan],
+            ['待核验与待补素材', selectedBrief.brief.verificationNeeds],
+          ] as const).map(([title, items]) => items?.length ? <div className="brief-zone brief-expanded-zone" key={title}><h3>{title}</h3><ol className="brief-steps">{items.map((item, index) => <li key={index}><b>{index + 1}</b><span>{item}</span></li>)}</ol></div> : null)}
+        </div>
+        {selectedBrief.brief.evidence?.imageInputMode === 'analysis' && <details className="brief-evidence"><summary>图片依据 <span>{selectedBrief.brief.evidence.images?.length ?? 0} 张分析摘要</span></summary><div className="brief-evidence-body"><p>本次使用已保存的视觉分析摘要，未重新读取原图。候选画面仍需你审核。</p><ul>{selectedBrief.brief.evidence.images?.map(image => <li key={image.id}>参考 {image.referenceId} · 第 {image.position ?? '?'} 张 · 素材 {image.id}：{image.description}（{image.tags.join('、')}）</li>)}</ul></div></details>}
         {briefError && <p className="research-error">{briefError}</p>}
         <div className="brief-actions"><span>参考笔记 {selectedBrief.referenceCount} 条 · {selectedBrief.brief.status === 'approved' ? '已进入素材筛选' : selectedBrief.brief.status === 'rejected' ? '已退回调研' : '通过后进入素材筛选'}</span><div className="button-row">
-          {selectedBrief.brief.status === 'candidate' && <><button className="secondary-button" onClick={() => void rejectBrief(selectedBrief.id)}><XCircle size={15} />放弃</button><button className="primary-button" onClick={() => void approveBrief(selectedBrief.id)}><CheckCircle2 size={15} />通过 Brief</button></>}
+          <button className="secondary-button" disabled={generatingBriefId !== null} onClick={() => void createBrief(selectedBrief.id)}><Zap size={15} />{generatingBriefId === selectedBrief.id ? '正在生成…' : selectedBrief.status === 'published' ? '基于此内容创建新策划' : '重新生成 Brief'}</button>
+          {selectedBrief.status !== 'published' && selectedBrief.brief.status === 'candidate' && <><button className="secondary-button" disabled={generatingBriefId !== null} onClick={() => void rejectBrief(selectedBrief.id)}><XCircle size={15} />放弃</button><button className="primary-button" disabled={generatingBriefId !== null} onClick={() => void approveBrief(selectedBrief.id)}><CheckCircle2 size={15} />通过 Brief</button></>}
           {selectedBrief.brief.status === 'approved' && <button className="primary-button" onClick={() => navigate(`/assets?topic=${encodeURIComponent(selectedBrief.id)}`)}><FileImage size={15} />前往筛选素材</button>}
-          {selectedBrief.brief.status === 'rejected' && <button className="secondary-button" onClick={() => void createBrief(selectedBrief.id)}>重新生成 Brief</button>}
         </div></div>
       </section>}
       <section className="kanban-board">

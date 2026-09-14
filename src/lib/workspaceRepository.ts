@@ -1,7 +1,7 @@
 import { normalizeComicProfile, validateComicProfile, validateComicCover } from './comicProfile'
 import type { ComicContentProfile } from '../types'
 import { demoState } from '../data/demo'
-import type { AssetContentType, AssetReviewStatus, AssetVisualFormat, ComicSerializationStatus, ComicStatus, ContentBrief, CopyrightStatus, ReferenceItem, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
+import type { AgentRun, AssetContentType, AssetReviewStatus, AssetVisualFormat, ComicSerializationStatus, ComicStatus, ContentBrief, CopyrightStatus, ReferenceItem, Topic, TopicStatus, WorkspaceState, XhsResearchResult } from '../types'
 import type { AssetAnalysis } from './assetAnalysis'
 import { supabase } from './supabase'
 
@@ -25,7 +25,7 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
     db.from('research_tasks').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
     db.from('schedules').select('*').eq('user_id', userId).order('created_at'),
     db.from('topic_references').select('topic_id, reference_id, position, is_primary'),
-    db.from('topic_assets').select('topic_id, asset_id'),
+    db.from('topic_assets').select('topic_id, asset_id, position, is_cover'),
     db.from('assets').select('*').eq('user_id', userId).is('archived_at', null).order('created_at', { ascending: false }),
     db.from('asset_usages').select('*').eq('user_id', userId).order('used_at', { ascending: false }),
   ])
@@ -147,6 +147,7 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
       assetCount: assetCounts.get(row.id) ?? 0,
       updatedAt: formatTime(row.updated_at),
       brief: row.brief && typeof row.brief === 'object' && typeof row.brief.angle === 'string' ? row.brief as ContentBrief : undefined,
+      previousTopicId: row.custom_fields?.previousTopicId,
     })),
     references,
     researchTasks: (tasksResult.data ?? []).map((row) => {
@@ -213,6 +214,7 @@ export async function loadCloudWorkspace(userId: string): Promise<WorkspaceState
       previewUrl: signedUrls.get(row.storage_path),
       topicId: (topicAssetsResult.data ?? []).find((link) => link.asset_id === row.id)?.topic_id,
       topicIds: (topicAssetsResult.data ?? []).filter((link) => link.asset_id === row.id).map((link) => link.topic_id),
+      topicPositions: Object.fromEntries((topicAssetsResult.data ?? []).filter(link => link.asset_id === row.id).map(link => [link.topic_id, link.is_cover ? -1 : link.position])),
       visualFormat: (['single', 'collage', 'uncertain', 'invalid'].includes(row.visual_format) ? row.visual_format : 'uncertain') as AssetVisualFormat,
       classificationConfidence: row.classification_confidence == null ? undefined : Number(row.classification_confidence),
       classificationNote: row.classification_note ?? '',
@@ -361,13 +363,27 @@ export async function markCloudReferenceDetailFailed(referenceId: string, messag
 }
 
 export async function updateCloudTopicStatus(topicId: string, status: TopicStatus) {
-  const { error } = await client().from('topics').update({ status }).eq('id', topicId)
+  if (status === 'published') throw new Error('请通过发布记录操作标记已发布')
+  const { error } = await client().from('topics').update({ status }).eq('id', topicId).neq('status', 'published').select('id').single()
   if (error) throw error
 }
 
-export async function updateCloudTopicBrief(topicId: string, brief: ContentBrief) {
-  const { error } = await client().from('topics').update({ brief }).eq('id', topicId)
+export async function updateCloudTopicBrief(topicId: string, brief: ContentBrief, status?: TopicStatus) {
+  const { data, error } = await client().from('topics').update({ brief, ...(status ? { status } : {}) }).eq('id', topicId).neq('status', 'published').select('id').single()
   if (error) throw error
+  if (!data) throw new Error('选题已发布或不可修改')
+}
+
+export async function createCloudTopicRevision(userId: string, topic: Topic, brief: ContentBrief, referenceIds: string[]) {
+  const db = client()
+  const { data, error } = await db.from('topics').insert({ user_id: userId, account_id: topic.accountId, comic_id: topic.comicId, title: `${topic.title} · 新策划`, subtitle: topic.subtitle, pillar: topic.pillar, score: topic.score, tags: topic.tags, status: 'research', brief, custom_fields: { previousTopicId: topic.id } }).select('id').single()
+  if (error) throw error
+  const { error: linkError } = await db.from('topic_references').insert(referenceIds.map((id, position) => ({ topic_id: data.id, reference_id: id, position, is_primary: position === 0, link_source: 'workflow' })))
+  if (linkError) {
+    await db.from('topics').delete().eq('id', data.id)
+    throw linkError
+  }
+  return data.id as string
 }
 
 export async function updateCloudAssetReview(
@@ -384,6 +400,14 @@ export async function updateCloudAssetReview(
     const { error: linkError } = await client().from('topic_assets').delete().eq('asset_id', assetId)
     if (linkError) throw linkError
   }
+}
+
+export async function archiveCloudAsset(assetId: string, accountId: string) {
+  const db = client()
+  const { error: unlinkError } = await db.from('topic_assets').delete().eq('asset_id', assetId)
+  if (unlinkError) throw unlinkError
+  const { error } = await db.from('assets').update({ archived_at: new Date().toISOString(), review_status: 'archived' }).eq('id', assetId).eq('account_id', accountId)
+  if (error) throw error
 }
 
 export async function updateCloudAssetAnalysis(assetId: string, analysis: AssetAnalysis) {
@@ -436,6 +460,46 @@ export async function saveCloudResearchResults(taskId: string, results: XhsResea
     last_run_at: new Date().toISOString(),
   }).eq('id', taskId)
   if (error) throw error
+}
+
+export async function enqueueCloudResearchRun(taskId: string, accountId: string) {
+  const db = client()
+  const { data: auth, error: authError } = await db.auth.getUser()
+  if (authError) throw authError
+  if (!auth.user) throw new Error('请先登录后再启动本机 Worker')
+  const { data: active } = await db.from('agent_runs').select('id,status').eq('research_task_id', taskId).in('status', ['queued', 'running']).limit(1).maybeSingle()
+  if (active) return active.id as string
+  const { data, error } = await db.from('agent_runs').insert({
+    user_id: auth.user.id,
+    account_id: accountId,
+    research_task_id: taskId,
+    run_type: 'research_discovery',
+    target_type: 'research_task',
+    target_id: taskId,
+    status: 'queued',
+    input: { source: 'research_page' },
+  }).select('id').single()
+  if (error) throw error
+  return data.id as string
+}
+
+export async function loadLatestCloudResearchRun(taskId: string): Promise<AgentRun | null> {
+  const db = client()
+  const { data: run, error } = await db.from('agent_runs').select('*').eq('research_task_id', taskId).order('created_at', { ascending: false }).limit(1).maybeSingle()
+  if (error) throw error
+  if (!run) return null
+  const { data: events, error: eventError } = await db.from('agent_run_events').select('*').eq('run_id', run.id).order('id', { ascending: true }).limit(30)
+  if (eventError) throw eventError
+  return {
+    id: run.id,
+    researchTaskId: run.research_task_id,
+    status: run.status,
+    currentStep: run.current_step,
+    output: run.output ?? {},
+    errorMessage: run.error_message ?? undefined,
+    createdAt: run.created_at,
+    events: (events ?? []).map((item) => ({ id: item.id, eventType: item.event_type, step: item.step, message: item.message, createdAt: item.created_at })),
+  }
 }
 
 export async function createCloudResearchTask(userId: string, accountId: string, input: { comicId: string; keywords: string[]; purpose: string; limit: number; publishedWithin: 'all' | 'week' }) {

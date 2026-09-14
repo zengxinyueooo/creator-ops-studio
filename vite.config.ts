@@ -249,6 +249,7 @@ async function runOpenCli(args: string[], timeout = 60_000) {
   const cliEntry = resolve(projectRoot, 'node_modules/@jackwener/opencli/dist/src/main.js')
   const { stdout } = await execFileAsync(findOpenCliNode(), [cliEntry, ...args], {
     cwd: projectRoot,
+    env: { ...process.env, OPENCLI_BROWSER_COMMAND_TIMEOUT: String(Math.max(1, Math.floor((timeout - 15_000) / 1000))) },
     timeout,
     maxBuffer: 2 * 1024 * 1024,
     windowsHide: true,
@@ -559,7 +560,10 @@ function localOpenCliPlugin() {
           const noteId = sourceNoteIdFromUrl(sourceUrl)
           if (!noteId) throw new Error('无法从笔记链接识别笔记 ID，已停止本次采集')
 
-          const rawDetail = await runOpenCli(['xiaohongshu', 'note', sourceUrl, '-f', 'json', '--window', 'background'], 90_000)
+          // Note detail pages can take longer than OpenCLI's 60s default while
+          // the logged-in tab finishes loading. Keep the host timeout aligned
+          // with the adapter timeout so the adapter reports the real failure.
+          const rawDetail = await runOpenCli(['xiaohongshu', 'note', sourceUrl, '-f', 'json', '--window', 'background'], 135_000)
           const detailRows = parseJson<Array<{ field?: unknown; value?: unknown }>>(rawDetail, '读取笔记详情时')
           const field = (name: string) => String(detailRows.find((row) => row.field === name)?.value ?? '').trim()
           const captureToken = randomUUID()
@@ -734,7 +738,7 @@ function localSiliconFlowPlugin(env: Record<string, string>) {
           const system = String(input.system ?? '').trim()
           const prompt = String(input.prompt ?? '').trim()
           if (!system || !prompt || system.length > 4_000 || prompt.length > 24_000) throw new Error('AI 请求缺少有效提示词')
-          const maxTokens = Math.min(1_600, Math.max(200, Number.parseInt(String(input.maxTokens ?? 900), 10) || 900))
+          const maxTokens = Math.min(5_000, Math.max(200, Number.parseInt(String(input.maxTokens ?? 900), 10) || 900))
           const temperature = Math.min(1, Math.max(0, Number(input.temperature ?? 0.7) || 0.7))
           const content = await requestCompletion({ system, prompt, maxTokens, temperature, model, jsonMode: true, disableThinking: true })
           res.statusCode = 200

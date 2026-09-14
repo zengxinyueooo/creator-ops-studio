@@ -1,63 +1,63 @@
 ---
 name: kuaikan-comic-discovery
-description: Discover and evaluate comics for a Kuaikan-only Xiaohongshu account by verifying official Kuaikan availability and validating demand with read-only OpenCLI Xiaohongshu research. Use when building or refreshing the comic candidate library. Do not use for topic or material research for an already selected comic.
+description: 为只运营快看漫画的小红书账号发现和评估漫画，核验快看官方可读性，并通过只读 OpenCLI 小红书调研验证需求。用于建立或更新漫画候选库，不用于已选漫画的选题或素材调研。
 ---
 
-# Kuaikan Comic Discovery
+# 快看漫画候选发现
 
-Create an evidence-backed shortlist for the user's review. Treat every result as a candidate, never as an approved comic.
+创建有证据支撑的候选清单供用户审核。每个结果都保持候选，不视为已批准漫画。
 
-## Inputs
+## 输入
 
-Collect or infer these inputs before research:
+调研前收集或推断以下输入：
 
-- Target account brief. Default to the user's Kuaikan-comic Xiaohongshu account when this repository is the active project.
-- Desired shortlist size. Default to 10 candidates.
-- Optional titles the user has read, likes, dislikes, or already rejected.
-- Existing comic records, so results can be deduplicated.
+- 目标账号定位。当前仓库为活动项目时，默认使用用户的快看漫画小红书账号。
+- 候选数量，默认十部。
+- 可选信息：用户读过、喜欢、不喜欢或已排除的作品。
+- 既有漫画记录，用于去重。
 
-Do not block when optional inputs are absent. State reasonable assumptions and proceed.
+缺少可选输入时不阻塞；说明合理假设后继续。
 
-## Workflow
+## 工作流
 
-### 1. Build a seed pool
+### 1. 建立初选池
 
-Use current, public Kuaikan sources to collect plausible titles. Prefer official Kuaikan rankings, recommendations, search results, or verified title pages. Supplement with user-provided titles.
+使用当前公开的快看来源收集可能合适的作品，优先官方榜单、推荐、搜索结果或已核验作品页，辅以用户提供的作品。
 
-Record the discovery source and date. Do not treat general web popularity as proof that a title is available on Kuaikan.
+记录发现来源与日期。网络上的一般热度不能证明作品可在快看阅读。
 
-### 2. Apply the Kuaikan hard gate
+### 2. 核验快看官方来源
 
-For every title, find a direct official Kuaikan title page or equivalent official Kuaikan evidence. Record:
+每部作品必须找到直接官方作品页或同等官方证据，记录：
 
-- Canonical title
-- Official Kuaikan URL
-- Author when available
-- Serialization status: `ongoing`, `completed`, or `unknown`
-- Update weekday when explicitly published; otherwise `null`
-- Verification date
+- 规范作品名。
+- 快看官方 URL。
+- 可获取时记录作者。
+- 连载状态：`ongoing`、`completed` 或 `unknown`。
+- 明确公布时记录每周更新日，否则为 `null`。
+- 核验日期。
 
-Reject the title if official Kuaikan availability cannot be verified. Do not infer an update weekday.
+无法验证快看官方可读性时排除作品。不得推断更新日。
 
-### 3. Validate Xiaohongshu demand with OpenCLI
+### 3. 使用 OpenCLI 验证小红书需求
 
-Load and follow `opencli-usage` before starting an OpenCLI session. Prefer the Xiaohongshu adapter over raw browser driving.
+开始 OpenCLI 会话前加载并遵守 `opencli-usage`，优先小红书适配器，不直接操纵原始浏览器。
 
-Run discovery first because adapter commands can change:
+适配器命令可能变化，先进行命令发现：
 
 ```bash
 opencli list -f json
 opencli xiaohongshu search --help
 ```
 
-Confirm browser connectivity and the signed-in account if the adapter requires it:
+确认浏览器连接；适配器要求登录时确认账号：
 
 ```bash
 opencli doctor
 opencli xiaohongshu whoami -f json
 ```
 
-Use only read commands. Every Xiaohongshu query must contain the canonical comic title (or an explicitly recorded title alias). Put the comic title first; intent words such as `漫画`, `名场面`, `特典`, or `更新` may follow it, but never search a generic intent by itself. For each title, search at least three distinct intents, adapting wording to the title:
+只用读取命令。每个小红书查询都必须包含规范作品名或明确记录的别名。作品名放在前面，后面可加“漫画”“名场面”“特典”“更新”等意图词，但不得单独搜索泛意图词。每部作品至少搜索三种不同意图，并针对作品调整措辞：
 
 ```bash
 opencli xiaohongshu search "<作品名> 漫画" --limit 20 -f json
@@ -65,47 +65,47 @@ opencli xiaohongshu search "<作品名> 名场面" --limit 20 -f json
 opencli xiaohongshu search "<作品名> 重温" --limit 20 -f json
 ```
 
-For ongoing titles, add an update-oriented query such as `"<作品名> 更新"`. For romance or nostalgia-heavy works, alternatives such as `白月光`, `意难平`, or a verified character name are acceptable when they test a genuinely different intent.
+连载作品增加“<作品名> 更新”等查询。恋爱或怀旧作品可使用“白月光”“意难平”或已核验人物名，但必须检验不同的真实意图。
 
-Keep query, retrieval time, note URL or note ID, title, author, raw likes, normalized likes, and published time. Never fabricate missing engagement or dates.
+保留查询词、获取时间、笔记 URL 或 ID、标题、作者、原始点赞、标准化点赞和发布时间。不得编造缺失的互动数据或日期。
 
-Before a note can support comic-specific demand, validate relevance from the note title and, when available, the note body or hashtags. If neither contains the comic title or a verified alias, classify the note as an off-topic false positive and exclude it from the candidate evidence set. Keep the exclusion reason for review; do not silently treat generic keyword matches as comic demand.
+笔记作为特定漫画需求证据前，必须从标题，以及可获取的正文或话题标签中验证相关性。如果这些内容都不包含作品名或已核验别名，将其归为不相关误命中并排除，保留排除理由供审核。不得悄悄将泛关键词匹配当成漫画需求。
 
-Normalize and deduplicate exported search JSON with:
+使用以下命令标准化并去重导出的搜索 JSON：
 
 ```bash
 node <skill-dir>/scripts/normalize_results.mjs <results.json>
 ```
 
-Resolve `<skill-dir>` to this skill's directory. The script also accepts JSON on stdin. It does not fetch data or write to a database.
+将 `<skill-dir>` 替换成本 Skill 目录。脚本也接受标准输入 JSON，不获取数据、不写数据库。
 
-### 4. Evaluate evidence
+### 4. 评估证据
 
-Read [scoring-and-output.md](references/scoring-and-output.md) before scoring.
+评分前阅读 [评分与输出约定](references/scoring-and-output.md)。
 
-Use multiple representative notes rather than one outlier. Separate these signals:
+使用多篇有代表性的笔记，不只依赖一个异常高值。区分：
 
-- Proven demand: engagement on relevant notes
-- Current demand: recent relevant activity
-- Reusable breadth: distinct discussion angles evidenced by search results
-- Account fit: suitability for the account brief
+- 已验证需求：相关笔记互动。
+- 当前需求：近期相关活动。
+- 可复用广度：搜索证据支持的不同讨论角度。
+- 账号匹配：是否适合账号定位。
 
-Do not describe a title as a likely hit solely because it is famous elsewhere.
+不得仅因作品在其他平台知名，就判断它很可能成为爆款。
 
-### 5. Return candidates for review
+### 5. 返回候选供审核
 
-Return a ranked table followed by structured records using the schema in the reference. Include concise reasons, evidence URLs, uncertainties, and rejected-title reasons.
+按参考文件的 Schema，先返回排名表，再返回结构化记录。包含简短理由、证据 URL、不确定项及被排除作品的理由。
 
-Deduplicate against existing records by canonical title and aliases. Never silently replace user-entered fields.
+按规范作品名和别名与既有记录去重。不得悄悄替换用户填写的字段。
 
-Do not write to Supabase unless the user explicitly asks. If asked, upsert only as `candidate` or the repository's equivalent unapproved state. Never mark a comic selected or approved on the user's behalf.
+用户未明确要求时不写 Supabase。获准写入时，仅以 `candidate` 或仓库对应的未批准状态执行 upsert，不得代用户标记为已选或已批准。
 
-## Safety and Quality Boundaries
+## 安全与质量边界
 
-- Keep Xiaohongshu activity read-only: no publishing, liking, saving, following, commenting, or deleting.
-- Do not download or copy other creators' images during candidate discovery.
-- Do not copy captions. Titles and short phrases may be retained only as research evidence.
-- Rate-limit naturally: use focused queries, small result limits, and no exhaustive crawling.
-- Cite direct official Kuaikan evidence and direct Xiaohongshu note evidence for every shortlisted title.
-- Mark unavailable or ambiguous data as `unknown`; never fill gaps by guesswork.
-- Keep this skill limited to discovering comics. Hand selected-title topic and material research to a separate workflow.
+- 小红书操作只读，不发布、点赞、收藏、关注、评论或删除。
+- 候选发现阶段不下载或复制其他创作者图片。
+- 不复制文案；标题和短语仅可保留为调研证据。
+- 使用聚焦查询、小结果上限自然控制频率，不穷尽抓取。
+- 每部入选候选都引用直接快看官方证据和直接小红书笔记证据。
+- 不可获取或含糊的数据标为 `unknown`，不得猜测补齐。
+- 本 Skill 仅负责发现漫画；已选作品的选题和素材调研交给独立工作流。

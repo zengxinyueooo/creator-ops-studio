@@ -1,41 +1,54 @@
 ---
 name: xiaohongshu-comic-note-capture
-description: Capture the complete metadata and media list for one human-kept Xiaohongshu comic reference note, then hand valid images to the asset-ingestion skill. Use only after a user keeps a research-inbox note and clicks capture. Do not use for discovery batches, topic synthesis, Brief generation, or publishing.
+description: 采集一篇人工保留的小红书漫画参考笔记的完整元数据和媒体列表，再将有效图片交给素材入库 Skill。仅用于用户保留调研收件箱笔记并点击采集之后；不用于批量发现、选题提炼、Brief 生成或发布。
 ---
 
-# Xiaohongshu Comic Note Capture
+# 小红书漫画笔记采集
 
-Capture one retained reference note as a durable research asset. The human decision to keep the note has already happened; this skill does not make another keep/reject decision.
+将一篇已保留参考笔记采集为持久化调研资料。人工保留决定已完成，本 Skill 不再次决定保留或排除。
 
-## Start gate
+## 前置条件
 
-Start only when all are true:
+以下条件必须全部满足：
 
-- The user clicked **采集完整信息/素材** for one note already persisted from the research inbox.
-- The note belongs to the active comic and has a source URL or stable note ID.
-- The note is marked `kept` by the user.
+- 用户对一篇已从调研收件箱保存的笔记点击 **采集完整信息/素材**。
+- 笔记属于当前漫画，并具有来源 URL 或稳定的笔记 ID。
+- 用户已将笔记标记为 `kept`。
 
-If a list-only candidate has not been kept, stop and send it back for human review. Never capture a search-result batch.
+仅有列表信息、尚未保留的候选，应停止并返回人工审核。不得采集整批搜索结果。
 
-## Capture contract
+## 采集约定
 
-1. Use the local OpenCLI Xiaohongshu adapter with the existing login state. Read `opencli-usage` before beginning an OpenCLI session.
-2. Run `opencli doctor` once. Retrieve the chosen note's detail once, then stop on a verification page, expired signed URL, access refusal, or abnormal prompt. Do not repeatedly retry.
-3. Persist only facts returned by the detail view: stable note ID, canonical/source URL, title, body, hashtags, author, publication time, visible engagement, media count, media order, retrieval timestamp, and `detail_status: captured`.
-4. Preserve the list-row query and metrics as retrieval provenance; detailed values do not overwrite that history.
-5. Call `xiaohongshu-comic-asset-ingestion` for the selected note's valid image files. Its default result is `pending` human review, not an invented semantic label.
+1. 使用本地 OpenCLI 小红书适配器及已有登录状态。开始 OpenCLI 会话前阅读 `opencli-usage`。
+2. 运行一次 `opencli doctor`。只读取一次所选笔记详情；遇到验证页、签名 URL 过期、访问拒绝或异常提示时停止，不反复重试。
+3. 只保存详情视图实际返回的事实：稳定笔记 ID、规范或来源 URL、标题、正文、话题标签、作者、发布时间、可见互动数据、媒体数量、媒体顺序、获取时间；全部素材核验后写入 `detail_status: detailed`。
+4. 保留列表行的查询词与互动数据作为检索来源记录，详情数据不得覆盖这段历史。
+5. 对所选笔记的有效图片应用 `xiaohongshu-comic-asset-ingestion`。视觉模型返回有效单图或拼图时为 `available`，不确定为 `pending`，无效为 `rejected`；不得编造语义标签。
 
-## Stop gate
+## Worker 中的观察与恢复
 
-After metadata and media have been persisted, show the note as **已采集，待素材审核**. Stop before:
+后台只使用提供的工具，OpenCLI 操作由宿主实现，不自行运行 Shell 命令。
 
-- deciding whether an image is a single image or collage;
-- selecting material for a Brief;
-- creating a topic or Brief;
-- generating text or publishing.
+1. 调用 `inspect_capture_state` 读取笔记及已保存位置。
+2. 调用 `prepare_note_capture` 准备笔记与图片清单；成功后清单在本会话缓存，不重复导航。
+3. 再检查状态，针对 `remainingPositions` 逐张调用 `process_capture_image`。工具先查已保存记录，再决定是否分析和上传；不要重做已完成位置。
+4. 每次阅读结构化结果。`ok: false` 且 `retryable: true` 时，先检查状态，再决定重试同一步或继续未完成位置。每个位置最多三次尝试，总工具调用最多 120 次，宿主强制执行限制。
+5. `retryable: false` 或 `action: stop` 时停止并说明已完成与剩余部分。采集阶段出现超时或导航拒绝，不自动再次采集，避免旧请求仍运行；登录、额度和验证问题交由用户处理。
+6. 全部位置处理后调用 `finalize_note_capture`。缺图时根据返回的剩余位置继续；只有 `completed: true` 才报告成功。普通进度记录警告不要求重做业务。
 
-## Safety and traceability
+反思体现为根据工具证据调整下一步，不需要输出内部推理。当前已入库结果跨任务保留，临时图片清单和视觉分析缓存仅在当前会话有效；不承诺进程重启后的完整断点续跑。
 
-- Keep every platform action read-only: no liking, saving, following, commenting, or publishing.
-- Never copy source captions into a generated draft. Note body and hashtags are research evidence with source provenance.
-- Preserve source-note ID and image order for deduplication. Do not expose login credentials or storage/API secrets.
+## 停止条件
+
+元数据和媒体核验保存后，将笔记展示为 **已采集，待人工选材**。在以下操作之前停止：
+
+- 代用户决定选用哪些素材。
+- 为 Brief 选择素材。
+- 创建选题或 Brief。
+- 生成文案或发布。
+
+## 安全与追溯
+
+- 所有平台操作保持只读：不点赞、收藏、关注、评论或发布。
+- 不得将来源文案复制到生成草稿中。笔记正文和话题标签仅作为有来源记录的调研证据。
+- 保留来源笔记 ID 与图片顺序用于去重，不得泄露登录凭证、存储或 API 密钥。

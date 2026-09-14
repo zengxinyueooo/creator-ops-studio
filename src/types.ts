@@ -45,7 +45,12 @@ export interface ContentBrief {
   status: BriefStatus
   generationMode?: 'model' | 'template'
   model?: string
-  evidence?: { comicId: string; profile: ComicContentProfile; referenceIds: string[]; generatedAt: string }
+  evidence?: { comicId: string; profile: ComicContentProfile; referenceIds: string[]; generatedAt: string; imageInputMode?: 'analysis'; images?: { id: string; referenceId: string; position?: number; description: string; tags: string[] }[] }
+  audience?: string
+  referenceInsights?: string[]
+  coverPlan?: string
+  pagePlan?: string[]
+  verificationNeeds?: string[]
   angle: string
   coreEmotion: string
   hook: string
@@ -82,6 +87,7 @@ export interface Comic {
 }
 
 export interface Topic {
+  previousTopicId?: string
   id: string
   accountId: string
   comicId?: string
@@ -159,12 +165,46 @@ export interface XhsResearchResult {
   matchedKeyword?: string
 }
 
+export type AgentRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+
+export interface AgentRunEvent {
+  id: number
+  eventType: string
+  step: string
+  message: string
+  createdAt: string
+}
+
+export interface AgentRunOutput {
+  results?: XhsResearchResult[]
+  summary?: string
+  topicId?: string
+  draftId?: string
+  version?: number
+  [key: string]: unknown
+}
+
+export interface AgentRun {
+  id: string
+  researchTaskId?: string
+  runType?: string
+  targetType?: string
+  targetId?: string
+  status: AgentRunStatus
+  currentStep: string
+  output: AgentRunOutput
+  errorMessage?: string
+  createdAt: string
+  events: AgentRunEvent[]
+}
+
 export type CopyrightStatus = 'unknown' | 'reference_only' | 'authorized' | 'original'
 export type AssetVisualFormat = 'single' | 'collage' | 'uncertain' | 'invalid'
 export type AssetReviewStatus = 'pending' | 'available' | 'rejected' | 'archived'
 export type AssetContentType = 'cover' | 'character' | 'interaction' | 'plot' | 'dialogue' | 'atmosphere' | 'other'
 
 export interface AssetItem {
+  topicPositions?: Record<string, number>
   id: string
   accountId: string
   comicId?: string

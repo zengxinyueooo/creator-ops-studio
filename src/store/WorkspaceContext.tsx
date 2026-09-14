@@ -7,6 +7,8 @@ import { useAuth } from '../auth/AuthContext'
 import { demoState } from '../data/demo'
 import { dataMode } from '../lib/supabase'
 import { generateContentBrief } from '../lib/briefGeneration'
+import { briefTransition, manualTransitionError } from '../lib/topicWorkflow'
+import { createCloudTopicRevision } from '../lib/workspaceRepository'
 import { analyzeComicAsset, type AssetAnalysis } from '../lib/assetAnalysis'
 import {
   captureXiaohongshuNote,
@@ -14,6 +16,7 @@ import {
 } from '../lib/opencliBridge'
 import {
   saveCloudComicProfile,
+  archiveCloudAsset,
   createCloudComic,
   createCloudSchedule,
   createCloudTopic,
@@ -56,7 +59,7 @@ interface WorkspaceContextValue {
   saveComicProfile: (comicId: string, profile: ComicContentProfile, cover?: File) => Promise<void>
   updateComicStatus: (comicId: string, status: ComicStatus) => Promise<void>
   updateTopicStatus: (topicId: string, status: TopicStatus) => void
-  generateTopicBrief: (topicId: string) => Promise<void>
+  generateTopicBrief: (topicId: string) => Promise<string>
   setTopicBriefStatus: (topicId: string, status: 'candidate' | 'approved' | 'rejected') => Promise<void>
   addTopic: (input: Pick<Topic, 'title' | 'subtitle' | 'pillar' | 'comicId'>) => void
   markResearchImported: (taskId: string) => void
@@ -70,6 +73,7 @@ interface WorkspaceContextValue {
   reviewAsset: (assetId: string, visualFormat: AssetVisualFormat, reviewStatus: AssetReviewStatus) => Promise<void>
   correctAssetAnalysis: (assetId: string, input: Pick<AssetAnalysis, 'visualFormat' | 'contentType' | 'tags' | 'characters' | 'classificationNote'>) => Promise<void>
   reanalyzeAsset: (assetId: string) => Promise<void>
+  deleteAsset: (assetId: string) => Promise<void>
   analyzePendingAssets: (limit?: number) => Promise<{ analyzed: number; skipped: number }>
   toggleTopicAsset: (topicId: string, assetId: string) => Promise<void>
   markTopicPublished: (topicId: string) => Promise<void>
@@ -308,6 +312,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
     },
     updateTopicStatus: (topicId, status) => {
+      const topic = state.topics.find(item => item.id === topicId)
+      if (!topic) return
+      const invalid = manualTransitionError(topic, status)
+      if (invalid) { setError(invalid); return }
       const previous = state
       setState((current) => ({
         ...current,
@@ -330,12 +338,24 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         .filter((reference) => reference.detailStatus === 'detailed' && referenceImagesComplete(reference, state.assets))
         .sort((left, right) => right.likes - left.likes)
       if (!references.length) throw new Error('请先采集至少一篇已保留参考笔记的完整信息，再生成 Brief')
-      const brief: ContentBrief = await generateContentBrief(topic, comic, references)
-      if (dataMode === 'supabase') await updateCloudTopicBrief(topicId, brief)
+      const brief: ContentBrief = await generateContentBrief(topic, comic, references, state.assets)
+      if (topic.status === 'published') {
+        const nextId = dataMode === 'supabase' && user
+          ? await createCloudTopicRevision(user.id, topic, brief, references.map(reference => reference.id))
+          : crypto.randomUUID()
+        if (dataMode === 'supabase') await reload()
+        else setState(current => ({ ...current,
+          topics: [{ ...topic, id: nextId, previousTopicId: topic.id, title: `${topic.title} · 新策划`, status: 'research', brief, assetCount: 0, referenceCount: references.length, updatedAt: '刚刚' }, ...current.topics],
+          references: current.references.map(reference => references.some(item => item.id === reference.id) ? { ...reference, topicIds: [...reference.topicIds, nextId] } : reference),
+        }))
+        return nextId
+      }
+      if (dataMode === 'supabase') await updateCloudTopicBrief(topicId, brief, 'research')
       setState((current) => ({
         ...current,
-        topics: current.topics.map((item) => item.id === topicId ? { ...item, brief, updatedAt: '刚刚' } : item),
+        topics: current.topics.map((item) => item.id === topicId ? { ...item, brief, status: 'research', updatedAt: '刚刚' } : item),
       }))
+      return topicId
     },
     setTopicBriefStatus: async (topicId, status) => {
       const topic = state.topics.find((item) => item.id === topicId)
@@ -344,14 +364,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       // A brief approval is a workflow decision, not only a label on the brief.
       // Move the topic to its next actionable stage at the same time so the
       // dashboard, kanban, and asset picker all agree on its current state.
-      const nextTopicStatus: TopicStatus = status === 'approved'
-        ? 'materials'
-        : status === 'rejected'
-          ? 'research'
-          : topic.status
+      const nextTopicStatus = briefTransition(topic, status)
       if (dataMode === 'supabase') {
-        await updateCloudTopicBrief(topicId, brief)
-        if (nextTopicStatus !== topic.status) await updateCloudTopicStatus(topicId, nextTopicStatus)
+        await updateCloudTopicBrief(topicId, brief, nextTopicStatus)
       }
       setState((current) => ({
         ...current,
@@ -616,7 +631,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (!referenceIds.length) throw new Error('请至少选择一条参考笔记')
       const selectedReferences = state.references.filter((reference) => referenceIds.includes(reference.id))
       if (selectedReferences.length !== referenceIds.length) throw new Error('部分参考笔记已不存在，请刷新后重试')
-      if (selectedReferences.some(reference => reference.accountId !== state.activeAccountId || reference.reviewStatus !== 'kept' || reference.detailStatus !== 'detailed' || !reference.body.trim() || !referenceImagesComplete(reference, state.assets))) throw new Error('请先保留并采集参考笔记完整信息')
+      for (const reference of selectedReferences) {
+        if (reference.accountId !== state.activeAccountId) throw new Error('请选择当前账号的参考笔记')
+        if (reference.reviewStatus !== 'kept') throw new Error(`请先将《${reference.title}》标记为“保留”`)
+        if (reference.detailStatus !== 'detailed' || !reference.body.trim() || !referenceImagesComplete(reference, state.assets)) {
+          throw new Error(`《${reference.title}》的正文或图片尚未采集完整，请点击该笔记的“采集详情与素材”（已采集过则点击“重新采集”），完成后再创建选题`)
+        }
+      }
       if (!input.comicId || selectedReferences.some((reference) => reference.comicId !== input.comicId)) throw new Error('一次只能合并同一部漫画的参考笔记')
 
       if (dataMode === 'supabase' && user) {
@@ -743,6 +764,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         } : item),
       }))
     },
+    deleteAsset: async (assetId) => {
+      const asset = state.assets.find(item => item.id === assetId && item.accountId === state.activeAccountId)
+      if (!asset) throw new Error('素材不存在或不属于当前账号')
+      if (dataMode === 'supabase') {
+        await archiveCloudAsset(assetId, asset.accountId)
+        await reload()
+        return
+      }
+      setState(current => ({
+        ...current,
+        assets: current.assets.filter(item => item.id !== assetId),
+        topics: current.topics.map(topic => asset.topicIds.includes(topic.id) ? { ...topic, assetCount: Math.max(0, topic.assetCount - 1) } : topic),
+      }))
+    },
     reanalyzeAsset: async (assetId) => {
       const asset = state.assets.find((item) => item.id === assetId)
       if (!asset) throw new Error('素材不存在')
@@ -830,6 +865,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         assets: current.assets.map((item) => item.id === assetId ? {
           ...item,
           topicIds: selected ? [...item.topicIds, topicId] : item.topicIds.filter((id) => id !== topicId),
+          topicPositions: { ...item.topicPositions, [topicId]: position },
           topicId: selected ? topicId : item.topicId === topicId ? undefined : item.topicId,
         } : item),
         topics: current.topics.map((topic) => topic.id === topicId ? { ...topic, assetCount: Math.max(0, topic.assetCount + (selected ? 1 : -1)), updatedAt: '刚刚' } : topic),

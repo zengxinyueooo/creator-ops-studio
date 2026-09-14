@@ -1,36 +1,36 @@
 ---
 name: xiaohongshu-comic-reference-discovery
-description: Find a small, deduplicated set of Xiaohongshu image-post reference candidates for one selected Kuaikan comic and stage them for explicit human import. Use after comic selection and before note-detail capture. Do not use for importing, reading full note details, asset ingestion, topic creation, Brief generation, copy generation, or publishing.
+description: 为一部已选快看漫画查找少量、去重后的小红书图文参考候选，暂存后等待人工明确导入。用于漫画选择之后、笔记详情采集之前；不用于导入、读取完整详情、素材入库、选题创建、Brief 生成、文案生成或发布。
 ---
 
-# Xiaohongshu Comic Reference Discovery
+# 小红书漫画参考调研
 
-Return a reviewable research result set for one selected Kuaikan comic. This skill ends at the user's explicit import decision.
+为一部已选快看漫画返回可审核的调研结果集。本 Skill 在用户明确决定是否导入处结束。
 
-## Boundaries
+## 范围边界
 
-- Work on exactly one selected comic per research task.
-- Treat search results as reference candidates, not approved topics.
-- Keep browser work read-only. Stop on verification, abnormal prompts, or access failures; do not auto-retry.
-- Do not open note-detail pages, download media, or create database records in this skill.
-- Never create a topic or a Brief. Hand each imported note to `xiaohongshu-comic-note-capture`; topic formation belongs to `comic-topic-synthesis`.
-- Do not invent note details. A `list_only` result may contain only title, author, engagement, date, URL, and note ID.
+- 每个调研任务恰好针对一部已选漫画。
+- 搜索结果是参考候选，不是已批准的选题。
+- 浏览器操作保持只读。遇到验证、异常提示或访问失败时停止，不自动重试。
+- 本 Skill 不打开笔记详情页、不下载媒体、不创建数据库记录。
+- 不创建选题或 Brief。已导入笔记的详情采集交给 `xiaohongshu-comic-note-capture`；选题提炼由 `comic-topic-synthesis` 负责。
+- 不编造笔记详情。`list_only` 结果只能包含标题、作者、互动数据、日期、URL 和笔记 ID。
 
-## Research contract
+## 调研约定
 
-1. Confirm the comic already exists in the workbench and is selected or followed.
-2. Choose the query and time strategy from the comic's serialization status. For an ongoing comic, prepare two or three title-containing queries around the newest chapter, special episode, or update point and use a one-week window. For a completed comic, use durable angles such as named scenes, character interaction, classic lines, ending discussion, or plot points; do not query “latest chapter” or apply a recency window.
-3. Use the local OpenCLI browser workflow with the user's existing login state. Read the stable image-post search route and only the first result screen. Sort the captured list by likes locally; for an ongoing comic, retain notes dated in the last week. “Unseen” means not already imported into this workbench, not the platform's private viewing-history flag.
-4. Read only the first result screen for each query. Do not auto-scroll. Deduplicate by note ID, falling back to the signed source URL, then keep at most ten results across all queries.
-5. Show the results before import. Import only the rows the user explicitly checks.
+1. 确认漫画已存在于工作台，且处于已选或跟进状态。
+2. 根据连载状态选择查询与时间策略。连载中漫画准备 2–3 个包含作品名、围绕最新章节、番外或更新点的查询，使用一周时间范围。已完结漫画使用具体场景、人物互动、经典台词、结局讨论或剧情点等长期角度；不查询“最新章节”，不设置近期时间限制。
+3. 使用本地 OpenCLI 浏览器流程与用户已有登录状态。使用稳定的图文搜索路径，只读取结果首屏。在本地按点赞排序；连载中漫画仅保留最近一周的笔记。“未看过”指尚未导入本工作台，不是平台的私人浏览历史标记。
+4. 每个查询只读首屏，不自动滚动。优先按笔记 ID 去重，缺失时使用带签名的来源 URL；所有查询合计最多保留十条结果。
+5. 导入前展示结果，仅导入用户明确勾选的行。
 
-## Human gate: import candidates
+## 人工关卡：导入候选
 
-- Present the list in the research inbox. The user must explicitly click **确定导入** for each row; do not auto-import search results.
-- On that click, persist only: source URL, note ID, matched query, list title, author, engagement, publication date, comic relation, retrieval timestamp, and `detail_status: list_only`.
-- Imported rows start as `candidate`; import is not a “keep” decision. The next human action is to keep or reject the reference in the library.
-- Never call the detail-capture workflow from this skill. It must begin only when the user asks to capture a kept note.
+- 在调研收件箱展示列表。用户必须针对相应行明确点击 **确定导入**，不得自动导入搜索结果。
+- 点击后仅保存来源 URL、笔记 ID、匹配查询词、列表标题、作者、互动数据、发布日期、漫画关联、检索时间及 `detail_status: list_only`。
+- 导入记录初始为 `candidate`；导入不等于保留。下一步由用户在参考库保留或排除。
+- 本 Skill 不调用详情采集流程；只有用户请求采集已保留笔记时才可开始。
 
-## Completion
+## 完成条件
 
-The workflow is complete when the user can see a bounded candidate set and explicitly import selected list records into the research inbox. Stop before full-note capture, material download, topic formation, Brief generation, final copy generation, or publishing.
+用户能够看到数量受限的候选集合，并明确选择将列表记录导入调研收件箱时，本工作流完成。在完整笔记采集、素材下载、选题提炼、Brief 生成、最终文案生成和发布之前停止。

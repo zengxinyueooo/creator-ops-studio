@@ -1,33 +1,49 @@
 ---
 name: comic-draft-generation
-description: Generate an editable Xiaohongshu title and caption draft from one approved Brief and the user-selected eligible single-image assets. Use only after Brief approval and material selection. Do not use for Brief approval, asset review, automated publication, or account actions.
+description: 根据漫画档案、已通过审核的 Brief 和按顺序选定的图片，生成并保存带版本的小红书文案。用于 Brief 审核和素材选择后的草稿创建或修订，不用于发布。
 ---
 
-# Comic Draft Generation
+# 漫画文案草稿生成
 
-Turn an approved plan and chosen materials into a reviewable caption draft. The user remains responsible for final editing and manual publication.
+将已批准的策划和已选素材转为可审核的文案草稿。最终编辑和手动发布由用户负责。
 
-## Start gate
+## 前置条件
 
-Start only when:
+仅在以下条件全部满足时开始：
 
-- one Brief has status `approved`;
-- the user selected at least one asset linked to that Brief;
-- every selected asset is `available`, `visual_format: single`, and belongs to the same comic;
-- the user explicitly clicks **基于 Brief 生成** or **生成新版本**.
+- 一个 Brief 的状态为 `approved`。
+- 用户已选择至少一张与该 Brief 关联的素材。
+- 每张已选素材均为 `available`，图片结构已知且有效：`single` 或已明确接受、完成分析的 `collage`；素材属于同一账号和漫画。
+- 用户明确点击 **基于 Brief 生成** 或 **生成新版本**。
 
-## Output contract
+## 输入与写作约定
 
-Create one editable draft version containing a title, body, optional topic tags, and a reference to its Brief and selected asset IDs. The draft must:
+使用已通过 Brief 中的漫画档案快照；仅在快照缺失时使用同漫画的当前档案。读取完整 Brief，包括读者、差异化角度、封面和分页计划，以及按选题素材位置排序、封面在前的最终已选素材。传入素材和参考 ID、来源位置、画面描述、标签、人物及置信度。这些是已存储的视觉分析，不是重新读取原图；不得声称读过原图，也不得从标签推断台词或未展示剧情。Brief 要求但用户未选择的图片，应调整文案适应实际选图，不得写成该图已经展示。
 
-- use the Brief's angle, structure, and spoiler constraints;
-- mention no unsupported plot fact;
-- be original rather than a rewrite of a source note;
-- preserve generation mode/model metadata;
-- leave every source image's use count unchanged.
+创作原创标题（通常不超过 20 字）、用空行分隔的 2–3 个短段落正文（通常 120–240 个汉字），以及最多五个相关话题标签。参考小红书漫画推荐的一般表达风格：亲切、口语化、有热情，可以偶尔表达强烈兴奋；在有证据的情绪亮点处适量使用“啊”“真的”“也太…了吧”等语气和感叹号。避免句句喊叫或机械插入固定感叹词。用具体设定或反差开头，结合已选图片证据展开推荐，第三段确有帮助时再简短收尾。不要写长篇剧情梗概或项目符号小标题。
 
-If no text model is configured, generate a clearly labelled template fallback. Do not claim an LLM generated it.
+写作前读完提供的档案、Brief 和图片分析，这不代表重新阅读原图。没有证据时不要泛泛描写眼神、停顿或动作。不得编造亲身经历、为营造兴奋夸张剧情、硬塞互动问题或复用参考措辞。区分官方事实与解读，遵守剧透边界，省略无依据的断言。可发布文案中不得出现内部 ID 或策划指令。
 
-## Stop gate
+## 版本持久化
 
-Save as `draft` and show it for user editing. Stop before any Xiaohongshu interaction. Only a separate, manual user action can mark an already published draft as published and then increment selected assets' usage history.
+每次生成都必须先保存再报告成功。云端模式使用既有 `drafts` 表，演示模式使用按用户和选题隔离的本地存储。保留标题、正文、话题标签、生成标签或模型、已通过 Brief 快照、有序素材 ID 及生成时间。读取已有版本再分配下一版本号；写入冲突时报告错误，不覆盖其他版本。
+
+提供历史版本切换和明确的“保存修改”操作。持久化失败时，让未保存的生成文本仍可在编辑器中找回，不得声称失败的写入已保存。切换选题或生成新版本时，不得丢弃未保存编辑。
+
+应用实现在 `src/pages/DraftsPage.tsx`，持久化在 `src/lib/draftRepository.ts`，选图顺序在 `src/lib/workspaceRepository.ts` 中加载。改变实际生成行为时，同步更新这些实现与 Skill 约定。
+
+## 输出约定
+
+创建一个可编辑草稿版本，包含标题、正文、可选话题标签，以及 Brief 与已选素材 ID 的引用。草稿必须：
+
+- 遵循 Brief 的角度、结构和剧透限制。
+- 不提及没有依据的剧情事实。
+- 保持原创，不改写来源笔记。
+- 保留生成模式和模型元数据。
+- 不改变任何来源图片的使用次数。
+
+未配置文本模型时，保存明确标注为不完整、需要人工写作的模板；不得填入编造的情绪观察，也不得声称由 LLM 生成。
+
+## 停止条件
+
+以 `draft` 状态保存并展示给用户编辑。在任何小红书互动之前停止。只有独立的人工操作才能将实际已经发布的草稿记录为已发布，随后增加所选素材的使用历史。

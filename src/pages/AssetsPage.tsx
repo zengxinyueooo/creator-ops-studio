@@ -23,7 +23,7 @@ const contentTypeLabels: Record<AssetContentType, string> = {
 }
 
 export function AssetsPage() {
-  const { activeAccount, accountTopics, state, uploadAssets, correctAssetAnalysis, reanalyzeAsset, analyzePendingAssets, toggleTopicAsset } = useWorkspace()
+  const { activeAccount, accountTopics, state, uploadAssets, correctAssetAnalysis, reanalyzeAsset, analyzePendingAssets, toggleTopicAsset, deleteAsset } = useWorkspace()
   const [searchParams, setSearchParams] = useSearchParams()
   const fileInput = useRef<HTMLInputElement>(null)
   const briefTopics = accountTopics.filter((topic) => topic.brief?.status === 'approved')
@@ -51,6 +51,18 @@ export function AssetsPage() {
   const [error, setError] = useState('')
   const [toast, setToast] = useState<{ message: string; tone: 'ok' | 'error' } | null>(null)
   const [previewAsset, setPreviewAsset] = useState<AssetItem | null>(null)
+  const [deletingAssetId, setDeletingAssetId] = useState<string | null>(null)
+  async function removeAsset(asset: AssetItem) {
+    if (deletingAssetId) return
+    if (!window.confirm(`删除素材“${asset.originalName}”？将从素材库移除并解除选题关联。云端原图及历史使用记录会保留。`)) return
+    setDeletingAssetId(asset.id)
+    try {
+      await deleteAsset(asset.id)
+      if (previewAsset?.id === asset.id) setPreviewAsset(null)
+      showToast('素材已从库中移除。')
+    } catch (error) { showToast(error instanceof Error ? error.message : '删除失败', 'error') }
+    finally { setDeletingAssetId(null) }
+  }
   const [editingAssetId, setEditingAssetId] = useState<string | null>(null)
   const [editFormat, setEditFormat] = useState<AssetVisualFormat>('single')
   const [editContentType, setEditContentType] = useState<AssetContentType>('other')
@@ -249,6 +261,7 @@ export function AssetsPage() {
             <div className="usage-line"><span><RefreshCw size={12} />使用 {asset.usageCount} 次{asset.lastUsedAt ? ` · 最近 ${asset.lastUsedAt}` : ''}</span>{asset.coverUsageCount > 0 && <span>封面 {asset.coverUsageCount} 次</span>}</div>
             {selectable && <button className={`asset-select-button ${selected ? 'selected' : ''}`} disabled={busyAssetId === asset.id || !selectedTopicId} onClick={() => void toggleSelection(asset.id)}>{selected ? <Check size={15} /> : <Layers3 size={15} />}{selected ? '已加入当前 Brief' : selectedTopicId ? '加入当前 Brief' : '先选择 Brief'}</button>}
             {waitingForAnalysis && <button className="asset-select-button" type="button" disabled><Sparkles size={15} />等待自动打标后可选</button>}
+            <button className="asset-delete-button" type="button" disabled={deletingAssetId !== null || busyAssetId === asset.id || analyzing} onClick={() => void removeAsset(asset)}>{deletingAssetId === asset.id ? '删除中…' : '删除素材'}</button>
             {!selectable && !waitingForAnalysis && asset.visualFormat !== 'invalid' && <p className="asset-unavailable-note">请重新 AI 分析或手动校正后再选择</p>}
           </div>
         </article>

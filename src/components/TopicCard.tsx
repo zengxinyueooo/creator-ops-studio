@@ -10,11 +10,13 @@ export function TopicCard({ topic, compact = false, onStatusChange, onOpenBrief,
       <div className="topic-card-top"><span className={`status-badge ${meta.className}`}>{meta.label}</span><span className={`score ${topic.score >= 85 ? 'high' : ''}`}>{topic.score} 分</span></div>
       <h3>{topic.title}</h3>
       <p>{topic.subtitle}</p>
+      {topic.previousTopicId && <small>基于已发布内容的新策划</small>}
+      {topic.status !== 'published' && topic.brief?.status === 'candidate' && <span className="status-badge amber">Brief 待审核</span>}
       <div className="tag-row">{topic.tags.map((tag) => <span key={tag}>#{tag}</span>)}</div>
       <div className="topic-meta"><span><Link2 size={14} />{topic.referenceCount}</span><span><FileImage size={14} />{topic.assetCount}</span>{topic.dueAt && <span><Clock3 size={14} />{topic.dueAt}</span>}</div>
       {onStatusChange && (
         <div className="topic-card-actions">
-          <PillSelect value={topic.status} ariaLabel="调整选题状态" menuAlign="right" options={Object.entries(statusMeta).map(([status, item]) => ({ value: status, label: item.label }))} onChange={(status) => onStatusChange(status as TopicStatus)} />
+          <PillSelect disabled={topic.status === 'published'} value={topic.status} ariaLabel="调整选题状态" menuAlign="right" options={Object.entries(statusMeta).filter(([status]) => status === topic.status || (status !== 'published' && (['idea', 'research'].includes(status) || topic.brief?.status === 'approved'))).map(([status, item]) => ({ value: status, label: item.label }))} onChange={(status) => onStatusChange(status as TopicStatus)} />
           {topic.brief && <button className="brief-link-button" type="button" onClick={onOpenBrief}><Eye size={13} />查看 Brief</button>}
           {!topic.brief && onCreateBrief && <button className="brief-link-button" type="button" onClick={onCreateBrief}><Eye size={13} />生成 Brief</button>}
         </div>

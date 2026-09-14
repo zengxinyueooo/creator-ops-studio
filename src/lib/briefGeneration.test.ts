@@ -19,11 +19,15 @@ describe('comic evidence boundaries', () => {
     expect(() => selectBriefReferences(topic, { ...comic, platform: 'other' }, [reference])).toThrow()
   })
   it('sends full reference bodies and profile, and persists evidence snapshot', async () => {
-    vi.mocked(generateAiJson).mockResolvedValue({ data: {}, model: 'test' })
-    const brief = await generateContentBrief(topic, comic, [reference])
+    vi.mocked(generateAiJson).mockResolvedValue({ data: { angle: '原创角度', coreEmotion: '期待', hook: '开场', structure: ['起', '承', '转'], assetGuidance: ['封面', '互动', '收尾'], avoidances: ['不剧透', '不照抄'], audience: '读者', coverPlan: '封面', referenceInsights: ['依据'], pagePlan: ['第1页'], verificationNeeds: ['待核验'] }, model: 'test' })
+    const asset = { ...demoState.assets[0], id: 'image-1', accountId: comic.accountId, comicId: comic.id, sourceReferenceId: reference.id, classificationNote: '双人对视', reviewStatus: 'available' as const }
+    const brief = await generateContentBrief(topic, comic, [reference], [asset, { ...asset, id: 'foreign', comicId: 'other' }, { ...asset, id: 'rejected', reviewStatus: 'rejected' }])
     const request = vi.mocked(generateAiJson).mock.calls[0][0]
     const prompt = JSON.parse(request.prompt)
     expect(prompt.references[0].body).toBe(reference.body)
+    expect(prompt.images.map((image: { id: string }) => image.id)).toEqual(['image-1'])
+    expect(brief.evidence?.images?.[0].description).toBe('双人对视')
+    expect(brief.pagePlan).toEqual(['第1页'])
     expect(prompt.comic.profile.setting).toBe('海边书店')
     expect(prompt.comic.profile.mainCharacters).toBe('未知')
     expect(brief.evidence?.referenceIds).toEqual(['evidence-1'])
@@ -42,6 +46,20 @@ describe('comic evidence boundaries', () => {
     expect(() => validateComicProfile(normalizeComicProfile({ officialSourceUrl: 'https://kuaikanmanhua.com.evil.test/' }))).toThrow()
     expect(() => validateComicCover({ type: 'image/svg+xml', size: 1 } as File)).toThrow()
     expect(() => validateComicCover({ type: 'image/png', size: 6 * 1024 * 1024 } as File)).toThrow()
+  })
+  it('accepts structured page entries and empty verification needs without another call', async () => {
+    vi.mocked(generateAiJson).mockResolvedValue({ data: { angle: '角度', coreEmotion: ['期待'], hook: '开场', audience: '读者', coverPlan: { image: '对视', title: '重逢' }, structure: ['起', '承'], assetGuidance: ['对视'], avoidances: ['不剧透'], referenceInsights: ['evidence-1'], pagePlan: [{ page: 1, purpose: '悬念', assetId: 'image-1' }], verificationNeeds: [] }, model: 'test' })
+    const brief = await generateContentBrief(topic, comic, [reference])
+    expect(brief.pagePlan?.[0]).toContain('image-1')
+    expect(brief.coverPlan).toContain('对视')
+    expect(brief.verificationNeeds?.[0]).toContain('人工确认')
+    expect(generateAiJson).toHaveBeenCalledTimes(1)
+  })
+  it('attempts missing-field repair only once and identifies remaining missing fields', async () => {
+    vi.mocked(generateAiJson).mockResolvedValue({ data: {}, model: 'test' })
+    await expect(generateContentBrief(topic, comic, [reference])).rejects.toThrow('audience')
+    expect(generateAiJson).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(vi.mocked(generateAiJson).mock.calls[1][0].prompt).originalRequest.references[0].body).toBe(reference.body)
   })
   it('reports profile completion for card feedback', () => {
     expect(getComicProfileProgress().percent).toBe(0)

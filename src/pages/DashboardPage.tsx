@@ -15,6 +15,12 @@ export function DashboardPage() {
   const ready = accountTopics.filter((topic) => topic.status === 'approved').length
   const reviewing = accountTopics.filter((topic) => topic.status === 'review').length
   const averageScore = accountTopics.length ? Math.round(accountTopics.reduce((sum, topic) => sum + topic.score, 0) / accountTopics.length) : 0
+  const featuredTopics = accountTopics.map(topic => {
+    const referenceIds = new Set(state.references.filter(reference => reference.accountId === activeAccount.id && reference.comicId === topic.comicId && reference.topicIds.includes(topic.id)).map(reference => reference.id))
+    const coverAsset = accountAssets.find(asset => asset.comicId === topic.comicId && asset.topicIds.includes(topic.id) && asset.previewUrl)
+      ?? accountAssets.find(asset => asset.comicId === topic.comicId && asset.sourceReferenceId && referenceIds.has(asset.sourceReferenceId) && asset.previewUrl)
+    return { topic, coverAsset }
+  }).sort((a, b) => Number(Boolean(b.coverAsset)) - Number(Boolean(a.coverAsset))).slice(0, 3)
 
   const steps = [
     { label: '选题灵感', note: '收集爆款证据', count: accountTopics.filter((t) => t.status === 'research' || t.status === 'idea').length, icon: Lightbulb },
@@ -41,11 +47,10 @@ export function DashboardPage() {
 
       <section className="dashboard-grid">
         <div className="panel tint-sky wide-panel">
-          <div className="panel-heading"><div><h2>热门选题</h2><p>按截止时间与选题分排序</p></div><Link to="/topics">管理选题库 <ArrowRight size={15} /></Link></div>
+          <div className="panel-heading"><div><h2>热门选题</h2><p>优先展示已采集图片素材的选题</p></div><Link to="/topics">管理选题库 <ArrowRight size={15} /></Link></div>
           <div className="feature-topic-list">
-            {accountTopics.slice(0, 3).map((topic, index) => {
+            {featuredTopics.map(({ topic, coverAsset }, index) => {
               const meta = statusMeta[topic.status]
-              const coverAsset = accountAssets.find((asset) => asset.topicIds.includes(topic.id) && asset.previewUrl)
               return (
                 <Link className="feature-topic-card" to="/topics" key={topic.id}>
                   <div className={`feature-cover ${COVER_TONES[index % COVER_TONES.length]}`}>{coverAsset ? <img src={coverAsset.previewUrl} alt={topic.title} loading="lazy" /> : <><Sparkles size={26} />{topic.tags[0] && <span className="cover-tag">#{topic.tags[0]}</span>}</>}</div>

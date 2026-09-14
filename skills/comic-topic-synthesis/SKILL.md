@@ -1,42 +1,42 @@
 ---
 name: comic-topic-synthesis
-description: Turn one to four human-kept, fully captured references for the same comic into one editable candidate content topic with evidence links. Use after reference capture and before Brief generation. Do not use for searching, media ingestion, Brief approval, draft generation, or publishing.
+description: 将同一漫画的 1–4 条人工保留且完整采集的参考笔记，提炼为一个带证据关联、可编辑的候选选题。用于参考采集之后、Brief 生成之前；不用于搜索、素材入库、Brief 审核、草稿生成或发布。
 ---
 
-# Comic Topic Synthesis
+# 漫画选题提炼
 
-Create an editable topic candidate from evidence the user has deliberately retained. A topic is a content hypothesis, not an approved Brief.
+从用户主动保留的证据中创建可编辑的候选选题。选题是内容假设，不是已审核通过的 Brief。
 
-## Start gate
+## 前置条件
 
-Start only after the user selects one to four references that are all:
+只有用户选择的 1–4 条参考全部满足以下条件后才能开始：
 
-- for the same comic;
-- marked `kept`;
-- `detail_status: captured`.
+- 属于同一漫画。
+- 标记为 `kept`。
+- `detail_status: captured`。
 
-One reference is allowed when it clearly supports a distinct angle; prefer two to four references for stronger evidence. Do not combine comics or substitute list-only result cards.
+一条参考能明确支撑独立角度时可以使用；优先使用 2–4 条以增强证据。不得混合不同漫画，也不得使用仅有列表信息的结果卡替代。
 
-## Create the candidate
+## 创建候选
 
-Produce and persist only these fields:
+只生成并保存以下字段：
 
-- concise topic title;
-- comic and optional chapter/scene scope;
-- content angle and intended reader response;
-- linked reference IDs, each with its source evidence;
-- reason the angle is supported (engagement signal, recurring discussion point, or update relevance);
-- initial workflow status `inspiration`.
+- 简洁的选题标题。
+- 漫画，以及可选的章节或场景范围。
+- 内容角度与预期读者反应。
+- 关联参考 ID，以及各自的来源证据。
+- 支撑该角度的理由：互动信号、反复出现的讨论点或更新相关性。
+- 初始工作流状态 `inspiration`。
 
-Base wording on the underlying scene and cross-note pattern. Do not reproduce a source caption, title, or distinctive sentence. Include uncertainty when evidence is thin.
+措辞应基于实际场景和跨笔记共性。不得复用来源文案、标题或有辨识度的句子。证据不足时说明不确定性。
 
-## Human gate and stop condition
+## 人工关卡与停止条件
 
-The user reviews and may edit the candidate topic in the topic board. Stop after the candidate is saved. Do not:
+用户在选题看板审核并可编辑候选。保存后停止，不得：
 
-- auto-create a Brief;
-- mark the topic as researched or approved;
-- choose or link material;
-- generate copy or publish.
+- 自动创建 Brief。
+- 将选题标记为已调研或已批准。
+- 选择或关联素材。
+- 生成文案或发布。
 
-The next explicit action is **生成 Brief**, handled by `comic-brief-generation`.
+下一步由用户明确点击 **生成 Brief**，交给 `comic-brief-generation`。

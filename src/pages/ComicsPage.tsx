@@ -3,6 +3,8 @@ import { ArrowUpRight, BookOpen, Check, CircleX, Library, LoaderCircle, Plus, Se
 import { useMemo, useState, type FormEvent } from 'react'
 import { getComicProfileProgress, normalizeComicProfile } from '../lib/comicProfile'
 import { enrichKuaikanComicProfile } from '../lib/kuaikanProfileEnrichment'
+import { runAgentWorkflow } from '../lib/agentWorkflow'
+import { dataMode } from '../lib/supabase'
 import { useWorkspace } from '../store/WorkspaceContext'
 import type { Comic } from '../types'
 
@@ -127,6 +129,14 @@ export function ComicsPage() {
       return next
     })
     try {
+      if (dataMode === 'supabase') {
+        await runAgentWorkflow({ runType: 'comic_profile_enrichment', targetType: 'comic', targetId: comic.id, accountId: comic.accountId }, (run) => {
+          const progress = run.events.at(-1)?.message
+          if (progress) setEnrichmentFeedback((current) => ({ ...current, [comic.id]: { type: 'success', message: progress } }))
+        })
+        window.location.reload()
+        return
+      }
       const result = await enrichKuaikanComicProfile(comic)
       await saveComicProfile(comic.id, result.profile, result.cover)
       const message = result.titleWarning
