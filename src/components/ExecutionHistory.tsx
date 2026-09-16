@@ -43,7 +43,9 @@ export function ExecutionHistory({ targetId }: { targetId: string }) {
       {error && <p role="alert">{error}</p>}
       {!report && !error && <p>{runs.length ? '正在汇总…' : '暂无记录或正在读取…'}</p>}
       {report && <>
-        <p>任务：{report.runId}<br />状态：{report.status} · 耗时：{report.durationMs === null ? '尚未结束' : `${Math.round(report.durationMs / 1000)} 秒`}</p>
+        <p>任务：{report.runId}<br />状态：{report.status} · 尝试：{report.attemptCount} 次 · 耗时：{report.durationMs === null ? '尚未结束' : `${Math.round(report.durationMs / 1000)} 秒`}</p>
+        <p>版本：{report.environment.release ?? '历史任务未记录'} · 模型：{report.environment.model ?? '历史任务未记录'}{report.errorCategory ? ` · 错误分类：${report.errorCategory}` : ''}</p>
+        <p>Skill：{report.environment.skills.join('、') || '历史任务未记录'} · 可恢复错误：{report.recovery.retryableFailures} 次 · 已记录工具耗时：{Math.round(report.recovery.recordedToolDurationMs / 1000)} 秒</p>
         <p>{report.coverage}。当前视图按已保存事件汇总，未写入的事件无法展示。</p>
         {report.error && <p role="alert">{report.error}</p>}
         <ol>{report.timeline.map(e => <li key={e.id} style={{ marginBottom: 10 }}><time>{new Date(e.created_at).toLocaleTimeString()}</time> · {e.message}

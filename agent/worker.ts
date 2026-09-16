@@ -47,6 +47,17 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const once = process.argv.includes('--once')
 const pollMs = Math.max(1000, Number(process.env.AGENT_WORKER_POLL_MS ?? 2500))
 const workerId = `${hostname()}:${process.pid}`
+const modelRef = () => process.env.PI_RESEARCH_MODEL ?? 'openai-codex/gpt-5.6-terra'
+const release = () => process.env.CREATOR_OPS_RELEASE ?? '0.1.0+local'
+
+const workflowSkills: Record<string, string[]> = {
+  comic_profile_enrichment: ['kuaikan-comic-profile-enrichment'],
+  research_discovery: ['xiaohongshu-comic-reference-discovery'],
+  note_capture: ['xiaohongshu-comic-note-capture', 'xiaohongshu-comic-asset-ingestion'],
+  topic_synthesis: ['comic-topic-synthesis'],
+  brief_generation: ['comic-brief-generation'],
+  draft_generation: ['comic-draft-generation'],
+}
 
 function loadLocalEnv() {
   try { process.loadEnvFile(resolve(root, '.env.local')) } catch { /* optional */ }
@@ -151,10 +162,10 @@ async function executeResearchRun(db: SupabaseClient, run: AgentRun, lease: RunL
   })
 
   const modelRuntime = await ModelRuntime.create()
-  const modelRef = process.env.PI_RESEARCH_MODEL ?? 'openai-codex/gpt-5.6-terra'
-  const [provider, ...idParts] = modelRef.split('/')
+  const configuredModel = modelRef()
+  const [provider, ...idParts] = configuredModel.split('/')
   const model = modelRuntime.getModel(provider, idParts.join('/'))
-  if (!model) throw new Error(`Pi 模型不可用：${modelRef}`)
+  if (!model) throw new Error(`Pi 模型不可用：${configuredModel}`)
   const { session } = await createAgentSession({ cwd: root, modelRuntime, model, thinkingLevel: 'medium', tools: ['get_research_context', 'search_xiaohongshu', 'save_research_candidates'], customTools: [getContext, search, save], resourceLoader: loader, sessionManager: SessionManager.inMemory(root) })
   session.subscribe((event) => {
     if (event.type === 'tool_execution_start') void addEvent(db, run, lease, 'pi_tool_started', 'agent_working', `Pi 调用 ${event.toolName}`).catch(console.error)
@@ -183,7 +194,7 @@ async function main() {
     lease.start()
     let piSessionId: string | undefined
     try {
-      await addEvent(db, run, lease, 'run_started', 'starting', '本机 Worker 已领取任务，正在启动 Pi')
+      await addEvent(db, run, lease, 'run_started', 'starting', '本机 Worker 已领取任务，正在启动 Pi', { workerId, release: release(), model: modelRef(), skills: workflowSkills[run.run_type] ?? [] })
       piSessionId = run.run_type === 'research_discovery'
         ? await executeResearchRun(db, run, lease)
         : await executeAdditionalWorkflow(root, db, run as Parameters<typeof executeAdditionalWorkflow>[2], (eventRun, eventType, step, message, payload) => addEvent(db, eventRun as AgentRun, lease, eventType, step, message, payload))
