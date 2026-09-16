@@ -76,6 +76,18 @@ export async function loadLatestAgentWorkflow(input: { runType: AgentRunType; ta
   return data ? loadAgentRun(data.id as string) : null
 }
 
+export async function loadLatestAccountAgentWorkflow(input: { runType: AgentRunType; accountId: string }) {
+  const db = client()
+  const { data, error } = await db.from('agent_runs').select('id')
+    .eq('run_type', input.runType)
+    .eq('account_id', input.accountId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  return data ? loadAgentRun(data.id as string) : null
+}
+
 export async function waitForAgentRun(runId: string, onProgress?: (run: AgentRun) => void, timeoutMs = 10 * 60_000) {
   const deadline = Date.now() + timeoutMs
   let lastStatus: AgentRunStatus = 'queued'

@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { searchXiaohongshuBatch } from '../lib/opencliBridge'
 import { enqueueCloudResearchRun, loadLatestCloudResearchRun } from '../lib/workspaceRepository'
 import { agentProgressMessage, runAgentWorkflow } from '../lib/agentWorkflow'
-import { useRecoveredAgentRun } from '../lib/useRecoveredAgentRun'
+import { useRecoveredAccountAgentRun, useRecoveredAgentRun } from '../lib/useRecoveredAgentRun'
 import { AgentRunStatus } from '../components/AgentRunStatus'
 import { dataMode } from '../lib/supabase'
 import { PillSelect } from '../components/PillSelect'
@@ -91,6 +91,15 @@ export function ResearchPage() {
   const [topicFeedback, setTopicFeedback] = useState<{ error: boolean; text: string } | null>(null)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const recoveredTopic = useRecoveredAccountAgentRun(
+    { runType: 'topic_synthesis', accountId: activeAccount.id },
+    async () => {
+      await reloadWorkspace()
+      setSelectedReferenceIds([])
+      setTopicFeedback({ error: false, text: '选题已生成并关联参考笔记。' })
+    },
+  )
+  const topicBusy = creatingTopic || recoveredTopic.active
   const selectedKeywords = keywordSelection ?? suggestedKeywords
   const tasks = useMemo(() => {
     const currentComicIds = new Set(state.comics.filter((comic) => comic.accountId === activeAccount.id && comic.status !== 'archived').map((comic) => comic.id))
@@ -311,7 +320,7 @@ export function ResearchPage() {
 
   async function createTopic(event: FormEvent) {
     event.preventDefault()
-    if (creatingTopic) return
+    if (topicBusy) return
     setTopicFeedback(null)
     if (!selectedReferences.length || !selectionComicId) {
       setTopicFeedback({ error: true, text: '请先勾选下方参考笔记库中同一部漫画的笔记。' })
@@ -445,10 +454,11 @@ export function ResearchPage() {
           <input value={topicTitle} onChange={(event) => setTopicTitle(event.target.value)} placeholder="选题标题（可改写参考笔记标题）" maxLength={120} />
           <input value={topicSubtitle} onChange={(event) => setTopicSubtitle(event.target.value)} placeholder="选题说明（选填）" maxLength={160} />
           <PillSelect value={topicPillar} ariaLabel="内容支柱" placeholder="选择内容支柱" options={(activeAccount.pillars.length ? activeAccount.pillars : ['高能片段']).map((pillar) => ({ value: pillar, label: pillar }))} onChange={setTopicPillar} />
-          <button className="primary-button" type="submit" disabled={creatingTopic}><Layers3 size={15} />{creatingTopic ? '创建中…' : '创建选题'}</button>
+          <button className="primary-button" type="submit" disabled={topicBusy}><Layers3 size={15} />{topicBusy ? '创建中…' : '创建选题'}</button>
           <div className="topic-builder-feedback" role={topicFeedback?.error ? 'alert' : 'status'}>
-            {creatingTopic ? '正在保存选题及关联笔记…' : topicFeedback ? <><span className={topicFeedback.error ? 'topic-feedback-error' : ''}>{topicFeedback.text}</span>{!topicFeedback.error && <Link to="/topics">查看选题 →</Link>}</> : '先勾选参考笔记，并完成“采集详情与素材”，再创建选题。'}
+            {topicBusy ? '正在保存选题及关联笔记…' : topicFeedback ? <><span className={topicFeedback.error ? 'topic-feedback-error' : ''}>{topicFeedback.text}</span>{!topicFeedback.error && <Link to="/topics">查看选题 →</Link>}</> : '先勾选参考笔记，并完成“采集详情与素材”，再创建选题。'}
           </div>
+          <AgentRunStatus run={recoveredTopic.run} error={recoveredTopic.error} successText="选题已生成" />
         </form>
       </section>
     </>
