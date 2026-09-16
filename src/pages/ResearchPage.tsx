@@ -54,7 +54,7 @@ function ReferenceActions({ reference, locallyCapturing, reviewing, onCapture, o
       <button className="secondary-button" type="button" disabled={reviewing || busy} onClick={() => onReview('rejected')}><X size={14} />排除</button>
       <button className="secondary-button keep-button" type="button" disabled={reviewing || busy} onClick={() => onReview('kept')}><Check size={14} />保留</button>
     </div>
-    <AgentRunStatus run={recovered.run} error={recovered.error} successText="详情与图片素材已采集" />
+    <AgentRunStatus run={recovered.run} error={recovered.error} successText="详情与图片素材已采集" onRetry={reference.reviewStatus === 'kept' ? onCapture : undefined} retryLabel="重新采集" />
   </>
 }
 

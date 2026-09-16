@@ -187,7 +187,7 @@ export function DraftsPage() {
   return (
     <>
       <section className="page-heading compact-heading"><div><span className="eyebrow">BRIEF + ASSETS → COPY</span><h1>文案工作台</h1><p>文案只使用已通过的 Brief 与你勾选、已完成视觉分析的素材；标记发布后才累计素材使用次数。</p></div><button className="primary-button" disabled={draftBusy} onClick={() => void generateDraft()}><Sparkles size={17} />{draftBusy ? '正在调用模型…' : '基于 Brief 生成'}</button></section>
-      <AgentRunStatus run={recoveredDraft.run} error={recoveredDraft.error} successText="草稿新版本已生成" />
+      <AgentRunStatus run={recoveredDraft.run} error={recoveredDraft.error} successText="草稿新版本已生成" onRetry={selected ? () => void generateDraft() : undefined} retryLabel="重新生成草稿" />
       <section className="draft-layout">
         <aside className="panel tint-sky draft-list"><div className="panel-heading"><div><h2>内容 Brief</h2><p>{briefTopics.length} 份候选</p></div><FileText size={18} /></div>{briefTopics.map((topic) => <button key={topic.id} disabled={generating || saving || dirty} onClick={() => { setSelectedId(topic.id); setMessage('') }} className={topic.id === selected?.id ? 'draft-item active' : 'draft-item'}><span>{topic.title.slice(0, 1)}</span><div><strong>{topic.title}</strong><small>{topic.brief?.status === 'approved' ? 'Brief 已通过' : '等待 Brief 审核'} · {topic.assetCount} 张素材</small></div></button>)}{!briefTopics.length && <div className="empty-state">还没有内容 Brief。</div>}</aside>
         <div className="panel tint-peach editor-panel">

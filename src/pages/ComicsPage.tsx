@@ -71,7 +71,7 @@ function ComicCard({ comic, mode, tone, onEdit, onEnrich, enriching, enrichmentF
           <button className="comic-profile-button" type="button" disabled={busy} onClick={onEdit}><BookOpen size={15} />{profileProgress.isEmpty ? '手动补充' : '查看 / 编辑'}</button>
         </div>
         {enrichmentFeedback && <p className={`comic-enrichment-feedback ${enrichmentFeedback.type}`}>{enrichmentFeedback.message}</p>}
-        {mode === 'selected' && <AgentRunStatus run={recovered.run} error={recovered.error} successText="官方档案已更新" />}
+        {mode === 'selected' && <AgentRunStatus run={recovered.run} error={recovered.error} successText="官方档案已更新" onRetry={onEnrich} retryLabel="重新补全档案" />}
         <div className="comic-card-footer">
           <div className="comic-source-links">
             {profile.officialSourceUrl && <a href={profile.officialSourceUrl} target="_blank" rel="noreferrer">快看官方页 <ArrowUpRight size={14} /></a>}
