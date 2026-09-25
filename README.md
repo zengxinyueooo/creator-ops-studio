@@ -24,7 +24,7 @@ pnpm install
 pnpm dev
 ```
 
-访问终端输出的本地地址。浏览器本地模式的修改会保存到 `localStorage`。
+`pnpm dev` 在 Supabase 与 Worker 密钥均已配置时同时启动页面和 Pi Worker；本地演示模式只启动页面。需要分别调试时可用 `pnpm dev:web` 或 `pnpm worker`。访问终端输出的本地地址。浏览器本地模式的修改会保存到 `localStorage`。
 
 ## 接入 Supabase
 

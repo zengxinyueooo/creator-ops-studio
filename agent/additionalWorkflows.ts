@@ -320,11 +320,69 @@ async function generatedWorkflow(root: string, db: SupabaseClient, run: Workflow
     }
     saved = true; await event(run, 'tool_completed', 'result_saved', '生成结果已保存，等待人工审核'); return { content: [{ type: 'text' as const, text: '{"saved":true}' }], details: {} }
   } })
-  const config = run.run_type === 'topic_synthesis' ? ['comic-topic-synthesis', '根据证据生成一个候选选题并保存。'] : run.run_type === 'brief_generation' ? ['comic-brief-generation', '根据证据生成完整候选 Brief 并保存。result 使用 Skill 中的字段名。'] : ['comic-draft-generation', '根据已通过 Brief 和有序素材生成一版文案并保存。result 包含 title、body、hashtags。']
+  const config = run.run_type === 'topic_synthesis' ? ['comic-topic-synthesis', '根据证据生成一个候选选题并保存。'] : run.run_type === 'brief_generation' ? ['comic-brief-generation', '根据证据生成完整候选 Brief 并保存。result 使用 Skill 中的字段名。'] : ['comic-draft-generation', '根据已通过 Brief 和有序素材，按 Skill 中明显高能、短促的安利口吻生成一版原创文案并保存。不要只在末尾加一个感叹词；让“啊”“哇”等语气和具体亮点贯穿全文，同时不要套用示例笔记的人物、剧情或原句。result 包含 title、body、hashtags。']
   return runSession(root, run, [config[0]], [get, save], config[1], () => saved)
 }
 
+async function draftStagingWorkflow(root: string, db: SupabaseClient, run: WorkflowRun, event: EventWriter) {
+  let context: { draftId: string; title: string; body: string; hashtags: string[]; images: string[] } | undefined
+  let saved = false
+  let stageStarted = false
+  const get = defineTool({ name: 'get_draft_staging_context', label: '核对待暂存文案', description: 'Validate the run-bound saved draft, approved Brief, and ordered assets. Returns only a summary; image URLs stay in the host.', parameters: Type.Object({}), execute: async () => {
+    const draftId = text(run.input.draftId, 50)
+    if (!/^[0-9a-f-]{36}$/i.test(draftId)) throw new Error('任务缺少有效草稿版本')
+    const [topicResult, draftResult, linksResult] = await Promise.all([
+      db.from('topics').select('id,comic_id,status,brief').eq('id', run.target_id).eq('user_id', run.user_id).eq('account_id', run.account_id).single(),
+      db.from('drafts').select('id,title,body,hashtags,generation_meta').eq('id', draftId).eq('topic_id', run.target_id).eq('user_id', run.user_id).eq('account_id', run.account_id).single(),
+      db.from('topic_assets').select('asset_id,position,is_cover').eq('topic_id', run.target_id).order('position'),
+    ])
+    if (topicResult.error) throw topicResult.error
+    if (draftResult.error) throw draftResult.error
+    if (linksResult.error) throw linksResult.error
+    const topic = topicResult.data; const draft = draftResult.data; const links = linksResult.data
+    if (topic.status === 'published') throw new Error('选题已标记发布，不能再次暂存')
+    if (topic.brief?.status !== 'approved' || JSON.stringify(draft.generation_meta?.brief) !== JSON.stringify(topic.brief)) throw new Error('Brief 未通过或草稿基于旧版 Brief')
+    const assetIds = links.map((link) => link.asset_id)
+    if (!assetIds.length || assetIds.length > 9 || assetIds.join(',') !== draft.generation_meta?.assetIds?.join(',')) throw new Error('当前选图与保存版本不一致，或图片数量不在 1–9 张之间')
+    if (!draft.title?.trim() || draft.title.trim().length > 20 || !draft.body?.trim()) throw new Error('保存版本缺少有效标题或正文')
+    const assetsResult = await db.from('assets').select('id,storage_path,review_status,visual_format,archived_at').in('id', assetIds).eq('user_id', run.user_id).eq('account_id', run.account_id).eq('comic_id', topic.comic_id)
+    if (assetsResult.error) throw assetsResult.error
+    if (assetsResult.data.length !== assetIds.length || assetsResult.data.some((asset) => asset.archived_at || asset.review_status !== 'available' || !['single', 'collage'].includes(asset.visual_format))) throw new Error('选图含已归档或未审核可用的素材')
+    const paths = assetIds.map((id) => assetsResult.data.find((asset) => asset.id === id)!.storage_path)
+    const signed = await db.storage.from('content-assets').createSignedUrls(paths, 900)
+    if (signed.error || signed.data?.length !== paths.length) throw new Error('暂存图片地址生成失败')
+    const signedByPath = new Map(signed.data.map((item) => [item.path, item.signedUrl]))
+    const orderedUrls = paths.map((path) => signedByPath.get(path))
+    if (orderedUrls.some((url) => !url)) throw new Error('暂存图片地址生成失败')
+    const checked = { draftId, title: draft.title.trim(), body: draft.body.trim(), hashtags: strings(draft.hashtags, 5, 30), images: orderedUrls.filter((url): url is string => Boolean(url)) }
+    context = checked
+    await event(run, 'step_completed', 'draft_checked', `已核对保存版本和 ${assetIds.length} 张最终选图`)
+    return { content: [{ type: 'text' as const, text: JSON.stringify({ draftId, title: checked.title, imageCount: checked.images.length, status: 'ready_for_draft_staging' }) }], details: {} }
+  } })
+  const stage = defineTool({ name: 'stage_xiaohongshu_draft', label: '暂存小红书草稿', description: 'Stage the validated run-bound draft in the current Chrome creator center. Never publish. Call once only.', parameters: Type.Object({}), execute: async () => {
+    if (!context) throw new Error('必须先核对待暂存文案')
+    if (saved) return { content: [{ type: 'text' as const, text: '{"completed":true,"saved":true}' }], details: {} }
+    if (stageStarted) throw new Error('本次暂存已开始，请等待结果，不要重复提交')
+    stageStarted = true
+    const current = context
+    const prior = await db.from('agent_runs').select('output').eq('id', run.id).single()
+    if (prior.error) throw prior.error
+    if (prior.data.output?.submissionStartedAt) throw new Error('上次暂存结果不明确，请先到创作者中心核对草稿箱；本任务不会自动重复提交')
+    await saveRunOutput(db, run.id, { draftId: current.draftId, submissionStartedAt: new Date().toISOString(), status: 'submitting' })
+    await event(run, 'tool_started', 'staging', 'Pi 正在通过 OpenCLI 暂存到创作者中心草稿箱')
+    const response = await fetch(`${appUrl()}/api/opencli/xhs-save-draft`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-creator-ops-bridge': '1' }, body: JSON.stringify(current), signal: AbortSignal.timeout(270_000) })
+    const result = await response.json().catch(() => null) as { status?: string; error?: string } | null
+    if (!response.ok || result?.status !== 'saved') throw new Error(result?.error || '暂存结果不明确，请先到创作者中心核对草稿箱')
+    await saveRunOutput(db, run.id, { draftId: current.draftId, status: 'saved', imageCount: current.images.length, stagedAt: new Date().toISOString(), location: 'current_chrome_creator_center' })
+    saved = true
+    await event(run, 'tool_completed', 'draft_staged', '已暂存到当前 Chrome 的创作者中心草稿箱，等待人工检查')
+    return { content: [{ type: 'text' as const, text: JSON.stringify({ completed: true, saved: true, draftId: current.draftId, imageCount: current.images.length }) }], details: {} }
+  } })
+  return runSession(root, run, ['xiaohongshu-draft-staging'], [get, stage], '先调用 get_draft_staging_context 核对当前任务绑定的版本与选图，再仅调用一次 stage_xiaohongshu_draft。只暂存草稿，绝不公开发布；结果不明时停止，不重试提交。', () => saved)
+}
+
 export async function executeAdditionalWorkflow(root: string, db: SupabaseClient, run: WorkflowRun, event: EventWriter) {
+  if (run.run_type === 'xhs_draft_staging') return draftStagingWorkflow(root, db, run, event)
   if (run.run_type === 'comic_profile_enrichment') return profileWorkflow(root, db, run, event)
   if (run.run_type === 'note_capture') return captureWorkflow(root, db, run, event)
   if (['topic_synthesis', 'brief_generation', 'draft_generation'].includes(run.run_type)) return generatedWorkflow(root, db, run, event)

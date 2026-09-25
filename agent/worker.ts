@@ -57,6 +57,7 @@ const workflowSkills: Record<string, string[]> = {
   topic_synthesis: ['comic-topic-synthesis'],
   brief_generation: ['comic-brief-generation'],
   draft_generation: ['comic-draft-generation'],
+  xhs_draft_staging: ['xiaohongshu-draft-staging'],
 }
 
 function loadLocalEnv() {
@@ -201,7 +202,9 @@ async function main() {
       lease.assertOwned()
       const completedMessage = run.run_type === 'research_discovery'
         ? '调研完成，候选结果等待人工审核'
-        : 'Agent 工作流完成，结果等待人工审核'
+        : run.run_type === 'xhs_draft_staging'
+          ? '已暂存到当前 Chrome 的创作者中心草稿箱，等待人工检查与发布'
+          : 'Agent 工作流完成，结果等待人工审核'
       await addEvent(db, run, lease, 'run_completed', 'completed', completedMessage)
       await finishOwnedRun(db, { runId: run.id, workerId, status: 'succeeded', piSessionId })
     } catch (caught) {

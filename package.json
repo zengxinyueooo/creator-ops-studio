@@ -4,8 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:agent": "concurrently -k -n web,worker -c cyan,magenta \"pnpm dev\" \"pnpm worker\"",
+    "postinstall": "node scripts/ensure-opencli-xhs-upload.mjs",
+    "dev": "node scripts/start-dev.mjs",
+    "dev:web": "vite --host 127.0.0.1",
+    "dev:agent": "concurrently -k -n web,worker -c cyan,magenta \"pnpm dev:web\" \"pnpm worker\"",
     "worker": "tsx agent/worker.ts",
     "worker:research": "pnpm worker",
     "worker:once": "tsx agent/worker.ts --once",

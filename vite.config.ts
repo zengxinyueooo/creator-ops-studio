@@ -2,8 +2,9 @@ import react from '@vitejs/plugin-react'
 import { randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
@@ -360,6 +361,39 @@ async function readJsonBody(req: IncomingMessage) {
   return JSON.parse(body) as { keywords?: unknown; requiredComicTitle?: unknown; limit?: unknown; publishedWithin?: unknown }
 }
 
+type XhsDraftInput = { title?: unknown; body?: unknown; hashtags?: unknown; images?: unknown }
+
+async function readXhsDraftBody(req: IncomingMessage): Promise<XhsDraftInput> {
+  let body = ''
+  for await (const chunk of req) {
+    body += chunk
+    if (body.length > 24_000) throw new Error('暂存请求过大')
+  }
+  return JSON.parse(body) as XhsDraftInput
+}
+
+async function stageXhsImages(images: unknown, root: string, supabaseOrigin: string) {
+  if (!Array.isArray(images) || images.length < 1 || images.length > 9) throw new Error('请选择 1–9 张图片')
+  const paths: string[] = []
+  for (const [index, raw] of images.entries()) {
+    if (typeof raw !== 'string') throw new Error('图片地址无效')
+    const url = new URL(raw)
+    if (url.origin !== supabaseOrigin || !url.pathname.includes('/storage/v1/object/sign/content-assets/')) throw new Error('仅可使用当前素材库的签名图片')
+    const response = await fetch(url, { signal: AbortSignal.timeout(30_000) })
+    if (!response.ok) throw new Error(`第 ${index + 1} 张图片读取失败，请刷新页面后重试`)
+    const declaredSize = Number(response.headers.get('content-length') ?? 0)
+    if (declaredSize > 15 * 1024 * 1024) throw new Error(`第 ${index + 1} 张图片超过 15MB`)
+    const bytes = Buffer.from(await response.arrayBuffer())
+    if (bytes.length > 15 * 1024 * 1024) throw new Error(`第 ${index + 1} 张图片超过 15MB`)
+    const mime = detectImageMime(bytes.subarray(0, 16))
+    if (!mime) throw new Error(`第 ${index + 1} 张不是可用图片`)
+    const path = resolve(root, `${index + 1}${extensionForMime(mime)}`)
+    await writeFile(path, bytes)
+    paths.push(path)
+  }
+  return paths
+}
+
 async function readAiJsonBody(req: IncomingMessage) {
   let body = ''
   for await (const chunk of req) {
@@ -406,12 +440,37 @@ function isLocalBridgeRequest(req: IncomingMessage) {
   return ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remoteAddress) && req.headers['x-creator-ops-bridge'] === '1'
 }
 
-function localOpenCliPlugin() {
+function localOpenCliPlugin(env: Record<string, string>) {
   const captures = new Map<string, Map<string, CaptureFile>>()
   const kuaikanCovers = new Map<string, KuaikanCoverCapture>()
   return {
     name: 'local-creator-ops-web-bridge',
     configureServer(server: { middlewares: { use: (path: string, handler: (req: IncomingMessage, res: ServerResponse) => void) => void } }) {
+      server.middlewares.use('/api/opencli/xhs-save-draft', async (req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        if (req.method !== 'POST') { res.statusCode = 405; res.end(JSON.stringify({ error: '只允许 POST 请求' })); return }
+        if (!isLocalBridgeRequest(req)) { res.statusCode = 403; res.end(JSON.stringify({ error: '仅允许 Creator Ops 本地页面调用' })); return }
+        let root = ''
+        try {
+          const input = await readXhsDraftBody(req)
+          const title = String(input.title ?? '').trim()
+          const body = String(input.body ?? '').trim()
+          if (!title || title.length > 20 || !body) throw new Error('请先保存有效的标题和正文（标题不超过 20 字）')
+          const hashtags = Array.isArray(input.hashtags) ? input.hashtags.map((value) => String(value).trim().replace(/^#/, '')).filter(Boolean).slice(0, 5) : []
+          const origin = new URL(env.VITE_SUPABASE_URL).origin
+          root = await mkdtemp(resolve(tmpdir(), 'creator-ops-xhs-draft-'))
+          const imagePaths = await stageXhsImages(input.images, root, origin)
+          const raw = await runOpenCli(['xiaohongshu', 'publish', body, '--title', title, '--images', imagePaths.join(','), '--topics', hashtags.join(','), '--draft', 'true', '--window', 'foreground', '--keep-tab', 'true', '-f', 'json'], 240_000)
+          const result = parseJson<unknown>(raw, '小红书暂存')
+          if (!JSON.stringify(result).includes('暂存成功')) throw new Error('小红书未确认暂存成功，请在创作者中心核对')
+          res.end(JSON.stringify({ status: 'saved', detail: result }))
+        } catch (caught) {
+          res.statusCode = 502
+          res.end(JSON.stringify({ error: caught instanceof Error ? caught.message : '暂存小红书草稿失败' }))
+        } finally {
+          if (root) await rm(root, { recursive: true, force: true }).catch(() => undefined)
+        }
+      })
       server.middlewares.use('/api/opencli/kuaikan-profile', async (req, res) => {
         res.setHeader('Content-Type', 'application/json; charset=utf-8')
         if (req.method !== 'POST') {
@@ -801,5 +860,5 @@ function localSiliconFlowPlugin(env: Record<string, string>) {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, projectRoot, '')
-  return { plugins: [react(), localOpenCliPlugin(), localSiliconFlowPlugin(env)] }
+  return { plugins: [react(), localOpenCliPlugin(env), localSiliconFlowPlugin(env)] }
 })

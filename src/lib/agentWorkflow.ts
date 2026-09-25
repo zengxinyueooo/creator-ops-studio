@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import type { AgentRun, AgentRunEvent, AgentRunStatus } from '../types'
 
-export type AgentRunType = 'comic_profile_enrichment' | 'research_discovery' | 'note_capture' | 'topic_synthesis' | 'brief_generation' | 'draft_generation'
+export type AgentRunType = 'comic_profile_enrichment' | 'research_discovery' | 'note_capture' | 'topic_synthesis' | 'brief_generation' | 'draft_generation' | 'xhs_draft_staging'
 export type AgentTargetType = 'comic' | 'research_task' | 'reference' | 'reference_set' | 'topic'
 
 function client() {
