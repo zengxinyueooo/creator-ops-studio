@@ -6,7 +6,6 @@ import { dataMode, supabase } from '../lib/supabase'
 interface AuthContextValue {
   user: User | null
   loading: boolean
-  sendLoginLink: (email: string) => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -42,14 +41,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(() => ({
     user,
     loading,
-    sendLoginLink: async (email) => {
-      if (!supabase) throw new Error('Supabase 尚未配置')
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: { emailRedirectTo: window.location.origin },
-      })
-      if (error) throw error
-    },
     signOut: async () => {
       if (!supabase) return
       const { error } = await supabase.auth.signOut()

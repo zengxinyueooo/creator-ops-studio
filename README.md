@@ -24,7 +24,7 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` 在 Supabase 与 Worker 密钥均已配置时同时启动页面和 Pi Worker；本地演示模式只启动页面。需要分别调试时可用 `pnpm dev:web` 或 `pnpm worker`。访问终端输出的本地地址。浏览器本地模式的修改会保存到 `localStorage`。
+`pnpm dev` 在 `VITE_DATA_MODE=local` 时直接启动无需登录的本地工作台，只启动页面；修改保存在当前浏览器的 `localStorage`。若切换到已认证的 Supabase 会话且配置 Worker 密钥，会同时启动页面和 Pi Worker。需要分别调试时可用 `pnpm dev:web` 或 `pnpm worker`。访问终端输出的本地地址。
 
 ## 接入 Supabase
 
@@ -32,6 +32,8 @@ pnpm dev
 2. 在 Supabase 项目设置中找到 Project URL 和 publishable key。
 3. 填写环境变量，并将 `VITE_DATA_MODE` 改成 `supabase`。
 4. 按文件名顺序执行 `supabase/migrations/` 中的 SQL。
+
+当前版本已移除登录入口。切换到 `supabase` 模式仅适用于浏览器中已有有效 Supabase 会话的情况；日常无需登录的使用方式为 `VITE_DATA_MODE=local`。
 
 第二份迁移会创建私有 bucket `content-assets`，限制图片格式与 15MB 大小，并确保每个用户只能访问以自己用户 ID 开头的目录。
 

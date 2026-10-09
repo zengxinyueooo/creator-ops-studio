@@ -7,7 +7,6 @@ import { DashboardPage } from './pages/DashboardPage'
 import { DraftsPage } from './pages/DraftsPage'
 import { ResearchPage } from './pages/ResearchPage'
 import { TopicsPage } from './pages/TopicsPage'
-import { LoginPage } from './pages/LoginPage'
 import { ComicsPage } from './pages/ComicsPage'
 import { useAuth } from './auth/AuthContext'
 import { dataMode, needsSupabaseConfiguration } from './lib/supabase'
@@ -29,7 +28,7 @@ export default function App() {
   }
 
   if (dataMode === 'supabase' && loading) return <div className="app-state">正在连接你的工作台…</div>
-  if (dataMode === 'supabase' && !user) return <LoginPage />
+  if (dataMode === 'supabase' && !user) return <main className="setup-page"><section className="setup-card"><h1>云端会话不可用</h1><p>此版本已移除登录入口。将 <code>VITE_DATA_MODE</code> 设为 <code>local</code> 可直接使用本地工作台。</p></section></main>
 
   return (
     <WorkspaceProvider>
