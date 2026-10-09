@@ -3,15 +3,10 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import type { User } from '@supabase/supabase-js'
 import { dataMode, supabase } from '../lib/supabase'
 
-interface AuthResult {
-  needsConfirmation?: boolean
-}
-
 interface AuthContextValue {
   user: User | null
   loading: boolean
-  signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string) => Promise<AuthResult>
+  sendLoginLink: (email: string) => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -47,16 +42,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(() => ({
     user,
     loading,
-    signIn: async (email, password) => {
+    sendLoginLink: async (email) => {
       if (!supabase) throw new Error('Supabase 尚未配置')
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: { emailRedirectTo: window.location.origin },
+      })
       if (error) throw error
-    },
-    signUp: async (email, password) => {
-      if (!supabase) throw new Error('Supabase 尚未配置')
-      const { data, error } = await supabase.auth.signUp({ email, password })
-      if (error) throw error
-      return { needsConfirmation: !data.session }
     },
     signOut: async () => {
       if (!supabase) return

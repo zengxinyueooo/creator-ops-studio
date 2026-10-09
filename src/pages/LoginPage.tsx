@@ -3,10 +3,8 @@ import { ArrowRight, Cloud, LockKeyhole, Sparkles } from 'lucide-react'
 import { useAuth } from '../auth/AuthContext'
 
 export function LoginPage() {
-  const { signIn, signUp } = useAuth()
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin')
+  const { sendLoginLink } = useAuth()
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
   const [pending, setPending] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -17,15 +15,8 @@ export function LoginPage() {
     setError('')
     setMessage('')
     try {
-      if (mode === 'signin') {
-        await signIn(email.trim(), password)
-      } else {
-        const result = await signUp(email.trim(), password)
-        if (result.needsConfirmation) {
-          setMessage('注册成功，请先到邮箱点击 Supabase 验证链接，再返回登录。')
-          setMode('signin')
-        }
-      }
+      await sendLoginLink(email.trim())
+      setMessage('登录链接已发送，请在邮箱中打开链接继续。')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '操作失败，请稍后重试')
     } finally {
@@ -51,18 +42,14 @@ export function LoginPage() {
       <section className="auth-card-wrap">
         <form className="auth-card" onSubmit={handleSubmit}>
           <div>
-            <span className="eyebrow">{mode === 'signin' ? 'WELCOME BACK' : 'CREATE WORKSPACE'}</span>
-            <h2>{mode === 'signin' ? '登录工作台' : '创建你的账号'}</h2>
-            <p>{mode === 'signin' ? '使用 Supabase 邮箱账号继续。' : '首次注册后可能需要验证邮箱。'}</p>
+            <span className="eyebrow">WELCOME BACK</span>
+            <h2>登录工作台</h2>
+            <p>输入邮箱，我们会发送一次性登录链接。</p>
           </div>
           <label>邮箱<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" required /></label>
-          <label>密码<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="至少 6 位" minLength={6} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} required /></label>
           {error && <p className="form-message error">{error}</p>}
           {message && <p className="form-message success">{message}</p>}
-          <button className="primary-button auth-submit" type="submit" disabled={pending}>{pending ? '处理中…' : mode === 'signin' ? '登录' : '注册'}<ArrowRight size={16} /></button>
-          <button className="auth-switch" type="button" onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); setMessage('') }}>
-            {mode === 'signin' ? '还没有账号？创建一个' : '已经有账号？返回登录'}
-          </button>
+          <button className="primary-button auth-submit" type="submit" disabled={pending}>{pending ? '发送中…' : '发送登录链接'}<ArrowRight size={16} /></button>
         </form>
       </section>
     </main>
